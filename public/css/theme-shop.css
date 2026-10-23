@@ -448,3 +448,6 @@
 :root[data-theme='shop'] .about-card h3 { color: var(--violet); }
 :root[data-theme='shop'] .about .btn-outline { border-color: rgb(0 0 0 / 0.2); color: #000; }
 @media (max-width: 1024px) { :root[data-theme='shop'] .about-pillars li:nth-child(n + 3) { margin-top: 0; border-top: 0; } }
+
+:root[data-theme='shop'] .nav-about.is-active { background: #000; color: #fff; border-color: #000; }
+:root[data-theme='shop'] body[data-page='nosotros'] .about.forest { padding-top: 24px; }

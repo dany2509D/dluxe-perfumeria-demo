@@ -476,7 +476,12 @@ const INFO = {
 function renderAbout() {
   const a = BRAND.about;
   const section = $('#nosotros');
-  if (!a || !section) return section?.remove();
+  if (!a || !section) {
+    section?.remove();
+    $('#nav-about')?.remove();
+    $('.footer a[href="#nosotros"]')?.closest('li')?.remove();
+    return;
+  }
   const years = BRAND.founded ? new Date().getFullYear() - BRAND.founded : 0;
   const fill = (s) => (/\{(years|founded)\}/.test(s) ? (BRAND.founded ? s.replace(/\{years\}/g, years).replace(/\{founded\}/g, BRAND.founded) : '') : s);
   $('#about-lead').textContent = a.lead;
@@ -863,10 +868,55 @@ function parallax() {
   $('#band-img').style.transform = `translateY(${(p * -9).toFixed(2)}%)`;
 }
 
+// ─── Páginas: los perfumes (portada) y «Quiénes somos» (#nosotros) ──────────
+// «Quiénes somos» es una vista aparte: al entrar se ven los perfumes y esa vista se abre con su botón. Se guarda en la dirección
+// (#nosotros), así que el botón Atrás, recargar y compartir el enlace funcionan; al volver, la portada recupera su lugar.
+const BASE_TITLE = document.title;
+let homeY = 0;
+function setPage(page) {
+  const about = page === 'nosotros' && !!$('#nosotros');
+  const was = document.body.dataset.page || 'inicio';
+  if (about && was !== 'nosotros') homeY = window.scrollY;
+  document.body.dataset.page = about ? 'nosotros' : 'inicio';
+  document.title = about ? `Quiénes somos · ${BRAND.name}` : BASE_TITLE;
+  const link = $('#nav-about');
+  link?.classList.toggle('is-active', about);
+  if (about) link?.setAttribute('aria-current', 'page');
+  else link?.removeAttribute('aria-current');
+  return was;
+}
+function goHome() {
+  setPage('inicio');
+  if (location.hash === '#nosotros') history.replaceState(null, '', location.pathname + location.search);
+}
+function route({ first = false } = {}) {
+  const was = setPage(location.hash === '#nosotros' ? 'nosotros' : 'inicio');
+  const now = document.body.dataset.page;
+  if (now === was && !first) return;
+  if (now === 'nosotros') {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    if (!first) $('#about-title').focus({ preventScroll: true });
+  } else if (!first) {
+    const target = location.hash.length > 1 ? document.getElementById(location.hash.slice(1)) : null;
+    if (target) target.scrollIntoView();
+    else window.scrollTo({ top: homeY, behavior: 'instant' });
+  }
+}
+
 // ─── Eventos ───────────────────────────────────────────────────────────────
 function bind() {
+  window.addEventListener('hashchange', () => route());
   document.addEventListener('click', (e) => {
     const t = e.target;
+    // Desde «Quiénes somos», lo que lleva al catálogo vuelve antes a los perfumes (esa parte está oculta y no se podría llegar a ella).
+    if (document.body.dataset.page === 'nosotros') {
+      if (t.closest('a.wordmark[href="/"]')) {
+        e.preventDefault();
+        goHome();
+        return void window.scrollTo({ top: 0, behavior: 'instant' });
+      }
+      if (t.closest('a[href="#catalogo"], [data-cat], [data-view="sale"], [data-brand], .cat-pill, [data-go], [data-close-go]')) goHome();
+    }
     // Dentro de un iframe en otra página, el panel no se puede mostrar (por seguridad nunca se incrusta): se abre en una pestaña nueva.
     const adminLink = t.closest('a[href^="/admin"]');
     if (adminLink && window.self !== window.top) {
@@ -1033,6 +1083,7 @@ async function init() {
 
   mountThemeSwitch();
   renderAbout();
+  route({ first: true });
   const icons = { lista: 'list', grande: 'gridLarge', pequena: 'gridSmall' };
   document.querySelectorAll('#view-switch .view-btn').forEach((b) => { b.innerHTML = icon(icons[b.dataset.mode], 20); });
   setLayout(loadLayout(), { save: false });

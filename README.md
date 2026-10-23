@@ -50,7 +50,7 @@ El nombre y los datos de la tienda están en **`brand.json`** (o variables `BRAN
 `STORE_ADDRESS`, `STORE_WHATSAPP`). Cambiarlos cambia la tienda, el panel, el chat y los textos de ayuda. También ahí: país, moneda,
 impuesto (**ITBMS 7 % incluido en el precio**, configurable), horario y redes. El prefijo de los SKU nuevos es `DLX`.
 
-La sección **Quiénes somos** de la portada (y lo que contesta el asistente a «¿quiénes son?» o «¿desde cuándo existen?») sale del bloque
+La vista **Quiénes somos** (el botón de la barra, o la dirección `/#nosotros`; al entrar a la tienda se ven los perfumes) y lo que contesta el asistente a «¿quiénes son?» o «¿desde cuándo existen?») sale del bloque
 `about` de `brand.json`: `lead` (presentación), `pillars` (hasta 4 datos clave con `title` y `text`), `mission`, `vision`, `values`,
 `where` (dónde está la tienda) y `note`. En los textos valen `{years}` y `{founded}`, que se calculan con `founded` (año de fundación);
 sin ese año, esos datos se omiten. Si falta el bloque, se usa un texto genérico con el nombre de la tienda. El texto de D'Luxe es de

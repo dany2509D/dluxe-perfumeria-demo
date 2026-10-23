@@ -17,7 +17,7 @@
   <link rel="stylesheet" href="/css/theme-shop.css">
   <script>document.documentElement.classList.add('js')</script>
 </head>
-<body class="dark">
+<body class="dark" data-page="inicio">
   <a class="skip" href="#catalogo">Saltar al catálogo</a>
 
   <header class="topbar dark">
@@ -29,10 +29,10 @@
         <a href="#catalogo" data-cat="Infantil" class="nav-link">Infantil</a>
         <a href="#catalogo" data-view="sale" class="nav-link">Ofertas</a>
         <button type="button" data-view="brands" class="nav-link">Marcas</button>
-        <a href="#nosotros" class="nav-link">Nosotros</a>
       </nav>
       <a class="wordmark" href="/" aria-label="{{BRAND_NAME}}, inicio">{{BRAND_SHORT}}</a>
       <nav class="nav nav-right" aria-label="Cuenta y bolsa">
+        <a href="#nosotros" class="nav-link nav-about" id="nav-about"><span class="nav-long">Quiénes somos</span><span class="nav-short">Nosotros</span></a>
         <a href="/admin" class="nav-link nav-admin">Panel</a>
         <button type="button" class="nav-link nav-bag" id="cart-btn" aria-label="Abrir la bolsa">
           <span class="bag-icon" id="bag-icon"></span>
@@ -74,29 +74,6 @@
     <div class="marquee dark" aria-hidden="true">
       <div class="marquee-track" id="marquee-track"></div>
     </div>
-
-    <!-- Quiénes somos: el texto sale de brand.json (about) -->
-    <section class="about forest" id="nosotros" aria-labelledby="about-title">
-      <div class="wrap about-inner">
-        <div class="about-intro reveal">
-          <p class="caption upper accent">Quiénes somos</p>
-          <h2 class="h-lg" id="about-title">{{BRAND_NAME}}</h2>
-          <p class="body-lg about-lead" id="about-lead"></p>
-          <div class="about-cta">
-            <a class="btn btn-lemon" href="#catalogo">Ver la colección</a>
-            <button type="button" class="btn btn-outline" id="about-chat">Preguntarle a nuestra asesora</button>
-          </div>
-        </div>
-        <ul class="about-pillars" id="about-pillars"></ul>
-        <div class="about-cards">
-          <article class="about-card reveal"><h3 class="caption upper accent">Misión</h3><p id="about-mission"></p></article>
-          <article class="about-card reveal"><h3 class="caption upper accent">Visión</h3><p id="about-vision"></p></article>
-          <article class="about-card reveal"><h3 class="caption upper accent">Valores</h3><p id="about-values"></p></article>
-        </div>
-        <p class="about-where" id="about-where" hidden></p>
-        <p class="caption muted about-note" id="about-note" hidden></p>
-      </div>
-    </section>
 
     <section class="catalog light" id="catalogo" aria-labelledby="catalog-title">
       <div class="wrap">
@@ -166,6 +143,29 @@
     <section class="feature forest" id="destacado" aria-labelledby="feature-title">
       <div class="feature-inner" id="feature"></div>
     </section>
+
+    <!-- Quiénes somos: vista aparte (#nosotros); se muestra en lugar de los perfumes. El texto sale de brand.json (about) -->
+    <section class="about forest" id="nosotros" aria-labelledby="about-title">
+      <div class="wrap about-inner">
+        <div class="about-intro reveal">
+          <p class="caption upper accent">Quiénes somos</p>
+          <h2 class="h-lg" id="about-title" tabindex="-1">{{BRAND_NAME}}</h2>
+          <p class="body-lg about-lead" id="about-lead"></p>
+          <div class="about-cta">
+            <a class="btn btn-lemon" href="#catalogo">Ver la colección</a>
+            <button type="button" class="btn btn-outline" id="about-chat">Preguntarle a nuestra asesora</button>
+          </div>
+        </div>
+        <ul class="about-pillars" id="about-pillars"></ul>
+        <div class="about-cards">
+          <article class="about-card reveal"><h3 class="caption upper accent">Misión</h3><p id="about-mission"></p></article>
+          <article class="about-card reveal"><h3 class="caption upper accent">Visión</h3><p id="about-vision"></p></article>
+          <article class="about-card reveal"><h3 class="caption upper accent">Valores</h3><p id="about-values"></p></article>
+        </div>
+        <p class="about-where" id="about-where" hidden></p>
+        <p class="caption muted about-note" id="about-note" hidden></p>
+      </div>
+    </section>
   </main>
 
   <footer class="footer dark">
@@ -193,7 +193,7 @@
         <ul class="footer-list footer-links">
           <li><button type="button" class="footer-link" data-info="envios">Envíos y pagos</button></li>
           <li><button type="button" class="footer-link" data-info="contacto">Contacto</button></li>
-          <li><a href="#nosotros">Nosotros</a></li>
+          <li><a href="#nosotros">Quiénes somos</a></li>
         </ul>
         <p class="footer-admin"><a href="/admin">Panel de administración</a></p>
       </div>

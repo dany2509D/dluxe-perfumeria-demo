@@ -395,3 +395,12 @@ button.nav-link { cursor: pointer; }
   .about-card { padding: 22px; }
   .about-cta .btn { flex: 1 1 100%; }
 }
+
+/* ── Páginas: los perfumes o «Quiénes somos» (la vista aparte reemplaza a la portada y al catálogo) ── */
+body[data-page='nosotros'] main > :not(#nosotros) { display: none; }
+body:not([data-page='nosotros']) #nosotros { display: none; }
+body[data-page='nosotros'] #nav-cats .is-active { border-color: transparent; }
+.nav-short { display: none; }
+@media (max-width: 400px) { .nav-long { display: none; } .nav-short { display: inline; } }
+#about-title:focus { outline: none; }
+body[data-page='nosotros'] .about { min-height: calc(100dvh - 80px); }
