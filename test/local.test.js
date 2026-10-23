@@ -33,9 +33,16 @@ describe('conversación básica', () => {
     assert.ok(/retirar/.test(both) && /transferencia/.test(both));
   });
   test('lo que no sabe (devoluciones, facturas) lo dice en vez de inventar', () => {
-    for (const q of ['¿Hacen devoluciones?', 'necesito una factura', 'dónde queda la tienda']) {
+    for (const q of ['¿Hacen devoluciones?', 'necesito una factura']) {
       assert.match(respond(db, { text: q }).text, /no lo tengo|equipo de la tienda/i, q);
     }
+  });
+  test('dice dónde está la tienda y quiénes son, con lo que trae brand.json', () => {
+    assert.match(respond(db, { text: 'dónde queda la tienda' }).text, /Los Pueblos 2000/);
+    const who = respond(db, { text: '¿Quiénes son ustedes?' }).text;
+    assert.match(who, /D'Luxe Perfumería es una tienda/);
+    assert.match(who, /Llevamos \d+ años/);
+    assert.match(respond(db, { text: '¿desde cuándo existen?' }).text, /2007/);
   });
   test('lo que no entiende o está fuera de tema no inventa recomendaciones', () => {
     for (const q of ['cuál es la capital de Francia', 'qué opinas del fútbol', 'asdfgh']) {

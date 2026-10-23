@@ -434,3 +434,17 @@
 :root[data-theme='shop'] .grid[data-layout='lista'] .card-body { padding: 4px 8px; }
 :root[data-theme='shop'] .grid[data-layout='lista'] .card-body h3 { font-size: 16px; }
 :root[data-theme='shop'] .grid[data-layout='lista'] .card:hover { transform: none; }
+
+/* ── Quiénes somos (diseño Shop): una tarjeta clara sobre el lienzo ──────── */
+:root[data-theme='shop'] .about.forest { --bg: var(--canvas); --fg: #000; --fg-accent: var(--violet); --fg-muted: var(--muted); --line: rgb(0 0 0 / 0.1); padding: 24px 0 8px; }
+:root[data-theme='shop'] .about-inner { background: #fff; border-radius: 28px; padding: clamp(24px, 4vw, 48px); box-shadow: var(--sh-sm); gap: 32px; }
+:root[data-theme='shop'] .about-intro { gap: 12px; }
+:root[data-theme='shop'] .about .h-lg { font-size: clamp(26px, 3.4vw, 40px); }
+:root[data-theme='shop'] .about .body-lg { font-size: 16px; }
+:root[data-theme='shop'] .about-pillars { border-top: 0; gap: 12px; }
+:root[data-theme='shop'] .about-pillars li, :root[data-theme='shop'] .about-pillars li + li { padding: 18px; border: 0; background: var(--canvas); border-radius: 20px; margin: 0; }
+:root[data-theme='shop'] .about-pillar-title { color: #000; font-size: 22px; letter-spacing: -0.04em; }
+:root[data-theme='shop'] .about-card { border: 0; background: var(--canvas); border-radius: 20px; }
+:root[data-theme='shop'] .about-card h3 { color: var(--violet); }
+:root[data-theme='shop'] .about .btn-outline { border-color: rgb(0 0 0 / 0.2); color: #000; }
+@media (max-width: 1024px) { :root[data-theme='shop'] .about-pillars li:nth-child(n + 3) { margin-top: 0; border-top: 0; } }

@@ -470,11 +470,31 @@ const INFO = {
     return `<dl class="info-dl">${rows.map(([k, v]) => `<dt class="caption upper muted">${k}</dt><dd>${v}</dd>`).join('')}</dl>
       <p class="muted">${BRAND.phone || BRAND.email || BRAND.address ? '' : 'Los datos de contacto se configuran en brand.json (teléfono, correo, dirección). '}También puedes escribirle a Aura, nuestra asesora virtual, desde el botón de la esquina.</p>`;
   }],
-  nosotros: ['Nosotros', () => `
-    <p class="body-lg">${esc(BRAND.name)}: ${esc(BRAND.tagline.toLowerCase())} en ${esc(BRAND.country)}. Perfumes para damas, caballeros y niños, estuches de regalo y testers, de marcas que ya conoces y otras por descubrir.</p>
-    <p>Esta es una propuesta de demostración: el catálogo, los precios y las existencias que ves son de ejemplo, y todo funciona de verdad: cada venta descuenta el inventario sola.</p>
-    <p class="muted">${esc(BRAND.demoNote)}</p>`],
 };
+
+// ─── Quiénes somos (el texto sale de brand.json) ───────────────────────────
+function renderAbout() {
+  const a = BRAND.about;
+  const section = $('#nosotros');
+  if (!a || !section) return section?.remove();
+  const years = BRAND.founded ? new Date().getFullYear() - BRAND.founded : 0;
+  const fill = (s) => (/\{(years|founded)\}/.test(s) ? (BRAND.founded ? s.replace(/\{years\}/g, years).replace(/\{founded\}/g, BRAND.founded) : '') : s);
+  $('#about-lead').textContent = a.lead;
+  $('#about-pillars').innerHTML = a.pillars
+    .map((p) => [fill(p.title), fill(p.text)])
+    .filter(([title, text]) => title && text)
+    .map(([title, text]) => `<li class="reveal"><strong class="about-pillar-title">${esc(title)}</strong><span class="about-pillar-text">${esc(text)}</span></li>`)
+    .join('');
+  for (const k of ['mission', 'vision', 'values']) $(`#about-${k}`).textContent = a[k];
+  const where = $('#about-where');
+  if (a.where) { where.innerHTML = `${icon('store', 20)}<span>${esc(a.where)}</span>`; where.hidden = false; }
+  const note = $('#about-note');
+  if (a.note) { note.textContent = a.note; note.hidden = false; }
+  $('#about-chat').addEventListener('click', () => {
+    const launcher = $('#chat-launcher');
+    if (launcher) launcher.click();
+  });
+}
 
 function openInfo(key) {
   const [title, body] = INFO[key] || [];
@@ -1012,6 +1032,7 @@ async function init() {
   $('#pd-plus').innerHTML = icon('plus', 16);
 
   mountThemeSwitch();
+  renderAbout();
   const icons = { lista: 'list', grande: 'gridLarge', pequena: 'gridSmall' };
   document.querySelectorAll('#view-switch .view-btn').forEach((b) => { b.innerHTML = icon(icons[b.dataset.mode], 20); });
   setLayout(loadLayout(), { save: false });

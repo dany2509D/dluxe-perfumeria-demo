@@ -17,12 +17,16 @@ const priceText = (v) => (v.compare_at ? `${money(v.price)} (antes ${money(v.com
 // Información de la tienda (lo único que se sabe de ella; igual que en el asistente de IA).
 function infoFor(brand) {
   const lower = (s) => s.charAt(0).toLowerCase() + s.slice(1);
+  const years = brand.founded ? new Date().getFullYear() - brand.founded : 0;
+  const about = brand.about?.lead && `${brand.about.lead}${years > 0 ? ` Llevamos ${years} años dedicados a los perfumes.` : ''}`;
+  const place = brand.address || brand.about?.where;
   return {
+    about: about || null,
     hours: `Atendemos ${lower(brand.hours)}.`,
     delivery: 'Puedes retirar tu pedido en la tienda sin costo, o pedir envío a domicilio (lo coordinamos por teléfono).',
     payment: 'Aceptamos tarjeta (en esta demostración el pago es simulado), transferencia bancaria y pago contra entrega.',
     noinfo: 'Eso no lo tengo a la mano. Lo mejor es consultarlo directamente con el equipo de la tienda.',
-    address: brand.address ? `Nos encuentras en ${brand.address}. ${lower(brand.hours).replace(/^/, 'Atendemos ')}.` : null,
+    address: place ? `Nos encuentras en ${place}. ${lower(brand.hours).replace(/^/, 'Atendemos ')}.` : null,
     contact: [brand.phone && `Teléfono: ${brand.phone}`, brand.email && `Correo: ${brand.email}`].filter(Boolean).join(' · ') || null,
   };
 }
@@ -39,6 +43,7 @@ const RE = {
   hours: /\b(horario|horarios|hora|horas|abren|abierto|abierta|cierran|cierra|atienden|atencion)\b/,
   delivery: /\b(envio|envios|enviar|enviarlo|entrega|entregan|entregar|domicilio|retiro|retirar|recoger|recojo|despacho|delivery|cuanto tarda|demora|demoran)\b/,
   payment: /\b(pago|pagos|pagar|tarjeta|transferencia|contra entrega|contraentrega|efectivo|yappy|metodos? de pago|forma de pago|formas de pago)\b/,
+  about: /\b(quienes son|quienes somos|quien es|historia|desde cuando|cuantos anos|trayectoria|fundada|fundado|mision|vision|valores|sobre ustedes|sobre la tienda|sobre la empresa)\b/,
   where: /\b(direccion|ubicacion|donde estan|donde queda|donde se ubican|como llegar|local|sucursal)\b/,
   contact: /\b(telefono|correo|email|contacto|numero de contacto)\b/,
   noinfo: /\b(devolucion|devoluciones|devolver|cambio de producto|garantia|factura|facturas|rastrear|rastreo|seguimiento|reclamo|reembolso)\b/,
@@ -328,6 +333,7 @@ export function respond(db, { text = '', prev = '', lastIds = [], whatsapp = nul
   if (RE.greet.test(n) && short) return { text: `Hola, soy Aura, tu asistente de compras en ${brand.short}. ¿Qué estás buscando hoy? Puedo recomendarte un perfume según para quién es, la ocasión o tu presupuesto.`, events: [] };
 
   const infos = [];
+  if (RE.about.test(n) && INFO.about) infos.push(INFO.about);
   if (RE.hours.test(n)) infos.push(INFO.hours);
   if (RE.delivery.test(n)) infos.push(INFO.delivery);
   if (RE.payment.test(n)) infos.push(INFO.payment);

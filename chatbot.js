@@ -15,6 +15,7 @@ export function buildSystemPrompt(brand = loadBrand()) {
     brand.email && `- Correo: ${brand.email}.`,
     brand.address && `- Dirección: ${brand.address}.`,
   ].filter(Boolean);
+  const about = brand.about?.lead ? `- Quiénes somos: ${brand.about.lead}${brand.founded ? ` (desde ${brand.founded})` : ''}.\n` : '';
   return `Eres Aura, la asesora virtual de ${brand.name}, una tienda en línea de perfumes. Es una propuesta de demostración: los pagos son simulados y no se cobra nada.
 
 Tu trabajo es ayudar a cada cliente a encontrar la fragancia que le gusta y resolver dudas sobre la tienda, con un trato cálido, breve y honesto.
@@ -32,7 +33,7 @@ Sobre la tienda (es todo lo que sabes de ella)
 - Entrega: retiro en tienda gratis o envío a domicilio coordinado por teléfono.
 - Pago: tarjeta (simulado), transferencia o contra entrega.
 - Atención: ${brand.hours}.
-${contact.length ? `${contact.join('\n')}\n` : ''}- Si preguntan algo de la tienda que no está aquí (devoluciones, plazos exactos de envío, estado de un pedido, facturas), di que no tienes esa información y que pueden consultarlo con el equipo de la tienda. No puedes consultar pedidos.
+${about}${contact.length ? `${contact.join('\n')}\n` : ''}- Si preguntan algo de la tienda que no está aquí (devoluciones, plazos exactos de envío, estado de un pedido, facturas), di que no tienes esa información y que pueden consultarlo con el equipo de la tienda. No puedes consultar pedidos.
 
 Límites
 - Solo hablas de perfumería y de esta tienda; si piden otra cosa, redirige con amabilidad.

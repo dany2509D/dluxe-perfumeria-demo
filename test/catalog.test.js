@@ -9,7 +9,7 @@ import { openDb } from '../db.js';
 import { resetAndSeed, seedLarge } from '../seed.js';
 import { queryProducts, facets, getProductsByIds, namesIndex, catalogSummary } from '../catalog.js';
 import { createProduct, updateProduct, updateVariant, listInventory, listProductsAdmin, listBrands, createOrder, setOrderStatus } from '../service.js';
-import { loadBrand } from '../brand.js';
+import { loadBrand, fillAbout } from '../brand.js';
 import { pickPhoto, fillMissingPhotos } from '../photos.js';
 import { existsSync } from 'node:fs';
 import { createApp } from '../app.js';
@@ -260,6 +260,22 @@ describe('marca configurable', () => {
     assert.equal(b.skuPrefix, 'DLX');
     const c = loadBrand({ BRAND_NAME: 'Mi Tienda', BRAND_SHORT: 'Mi', STORE_PHONE: '+507 111', STORE_WHATSAPP: '+507 6000-0000' });
     assert.deepEqual([c.name, c.short, c.phone, c.whatsapp], ['Mi Tienda', 'Mi', '+507 111', '50760000000']);
+  });
+  test('«Quiénes somos»: texto de brand.json, o uno genérico con el nombre de la tienda', () => {
+    const d = loadBrand({});
+    assert.equal(d.founded, 2007);
+    assert.equal(d.about.pillars.length, 4);
+    assert.match(d.about.where, /Los Pueblos 2000/);
+    const g = loadBrand({ BRAND_NAME: 'Mi Tienda' }, new URL('file:///no/existe.json'));
+    assert.equal(g.founded, 0);
+    assert.match(g.about.lead, /^Mi Tienda es una tienda de perfumes/);
+    assert.ok(g.about.pillars.length >= 3 && g.about.mission && g.about.vision && g.about.values);
+  });
+  test('fillAbout rellena años y fundación, y omite la línea si no hay año', () => {
+    const now = new Date('2026-10-23');
+    assert.equal(fillAbout('{years} años desde {founded}', 2007, now), '19 años desde 2007');
+    assert.equal(fillAbout('{years} años', 0, now), '');
+    assert.equal(fillAbout('Sin marcadores', 0, now), 'Sin marcadores');
   });
   test('un brand.json inexistente o dañado no rompe nada', () => {
     assert.equal(loadBrand({}, new URL('file:///no/existe.json')).name, "D'Luxe Perfumería");

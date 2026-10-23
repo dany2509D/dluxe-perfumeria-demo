@@ -363,3 +363,35 @@ button.nav-link { cursor: pointer; }
 /* Distintivos de las fotos chicas: nunca se salen de la foto */
 .grid[data-layout='pequena'] .card-chips, .grid[data-layout='lista'] .card-chips { right: 6px; }
 .grid[data-layout='pequena'] .card-chips .badge, .grid[data-layout='lista'] .card-chips .badge { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Quiénes somos ────────────────────────────────────────────────────── */
+.about { padding: clamp(64px, 9vw, 120px) 0; }
+.about-inner { display: grid; gap: clamp(40px, 6vw, 72px); }
+.about-intro { display: grid; gap: 20px; max-width: 46rem; }
+.about-lead { color: var(--fg-muted); max-width: 38em; }
+.about-cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+.about-pillars { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--line); }
+.about-pillars li { display: grid; align-content: start; gap: 8px; padding: 28px 24px 4px 0; }
+.about-pillars li + li { padding-left: 24px; border-left: 1px solid var(--line); }
+.about-pillar-title { font-size: clamp(24px, 2.6vw, 32px); line-height: 1.1; letter-spacing: 0.03em; font-weight: 500; color: var(--fg-accent); }
+.about-pillar-text { color: var(--fg-muted); font-size: 16px; line-height: 1.4; }
+.about-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.about-card { display: grid; align-content: start; gap: 12px; padding: 28px; border: 1px solid var(--line); border-radius: var(--radius); }
+.about-card p { margin: 0; font-size: 17px; line-height: 1.45; }
+.about-where { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--fg-muted); }
+.about-where svg { flex: none; color: var(--fg-accent); }
+.about-note { margin: 0; max-width: 46rem; }
+@media (max-width: 1024px) {
+  .about-pillars { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .about-pillars li:nth-child(odd) { padding-left: 0; border-left: 0; }
+  .about-pillars li:nth-child(n + 3) { border-top: 1px solid var(--line); margin-top: 24px; }
+  .about-cards { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .about-pillars { grid-template-columns: 1fr; }
+  .about-pillars li, .about-pillars li + li { padding: 20px 0 4px; border-left: 0; margin-top: 0; }
+  .about-pillars li + li { border-top: 1px solid var(--line); }
+  .about-cards { gap: 14px; }
+  .about-card { padding: 22px; }
+  .about-cta .btn { flex: 1 1 100%; }
+}

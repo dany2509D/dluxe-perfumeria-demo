@@ -21,9 +21,42 @@ export const DEFAULT_BRAND = {
   facebook: '',
   whatsapp: '',
   demoNote: 'Propuesta de demostración. Los productos, marcas y precios de ejemplo son ficticios.',
+  founded: 0,
 };
 
 const str = (v, fallback, max = 200) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : fallback);
+
+// Rellena {years} y {founded} en un texto de «Quiénes somos». Sin año de fundación devuelve '' para que se omita esa línea.
+export function fillAbout(text, founded, now = new Date()) {
+  if (!/\{(years|founded)\}/.test(text)) return text;
+  if (!founded) return '';
+  return text.replace(/\{years\}/g, now.getFullYear() - founded).replace(/\{founded\}/g, founded);
+}
+
+// «Quiénes somos»: si brand.json no trae texto, se usa uno genérico con el nombre de la tienda. En los textos valen {years} y {founded}.
+function resolveAbout(raw, name) {
+  const a = raw && typeof raw === 'object' ? raw : {};
+  const pillars = (Array.isArray(a.pillars) ? a.pillars : [])
+    .map((p) => ({ title: str(p?.title, '', 40), text: str(p?.text, '', 180) }))
+    .filter((p) => p.title && p.text)
+    .slice(0, 4);
+  return {
+    lead: str(a.lead, `${name} es una tienda de perfumes para damas, caballeros y niños, con atención personalizada y compra en línea.`, 420),
+    pillars: pillars.length
+      ? pillars
+      : [
+          { title: 'Para toda la familia', text: 'Perfumes, estuches de regalo y testers para damas, caballeros y niños.' },
+          { title: 'Atención personalizada', text: 'Te ayudamos a elegir la fragancia que va contigo.' },
+          { title: 'Tienda y en línea', text: 'Compra desde casa o pasa a recoger tu pedido.' },
+        ],
+    mission: str(a.mission, 'Ayudarte a encontrar la fragancia que te represente, con productos de calidad y un trato cercano.', 320),
+    vision: str(a.vision, 'Ser la primera opción de quienes buscan perfumes, en la tienda y en línea.', 320),
+    values: str(a.values, 'Respeto, dedicación, trabajo en equipo y compromiso con cada cliente.', 320),
+    where: str(a.where, '', 200), // dónde está la tienda (se muestra solo en «Quiénes somos»)
+    note: str(a.note, '', 220),
+  };
+}
+
 
 // Identidad a partir de los datos de brand.json (ya leídos) y las variables de entorno. No toca el disco.
 export function resolveBrand(fromFile = {}, env = process.env) {
@@ -48,6 +81,8 @@ export function resolveBrand(fromFile = {}, env = process.env) {
     facebook: str(merged.facebook, '', 200),
     whatsapp: /^\d{8,15}$/.test(digits) ? digits : '',
     demoNote: str(merged.demoNote, DEFAULT_BRAND.demoNote, 200),
+    founded: Number.isInteger(Number(merged.founded)) && Number(merged.founded) >= 1900 && Number(merged.founded) <= new Date().getFullYear() ? Number(merged.founded) : 0,
+    about: resolveAbout(merged.about, str(env.BRAND_NAME, str(merged.name, DEFAULT_BRAND.name, 80), 80)),
   };
 }
 
@@ -66,7 +101,7 @@ export const publicBrand = (b) => ({
   name: b.name, short: b.short, tagline: b.tagline, country: b.country, currency: b.currency,
   taxName: b.taxName, taxRate: b.taxRate, taxIncluded: b.taxIncluded, hours: b.hours,
   phone: b.phone, email: b.email, address: b.address, instagram: b.instagram, facebook: b.facebook,
-  whatsapp: !!b.whatsapp, demoNote: b.demoNote,
+  whatsapp: !!b.whatsapp, demoNote: b.demoNote, founded: b.founded, about: b.about,
 });
 
 export const escHtml = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);

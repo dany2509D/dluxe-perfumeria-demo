@@ -14,5 +14,32 @@
   "address": "",
   "instagram": "",
   "facebook": "",
-  "demoNote": "Propuesta de demostración. Los productos, marcas y precios de ejemplo son ficticios."
+  "demoNote": "Propuesta de demostración. Los productos, marcas y precios de ejemplo son ficticios.",
+  "founded": 2007,
+  "about": {
+    "lead": "D'Luxe Perfumería es una tienda panameña especializada en perfumes, testers y estuches de regalo para damas, caballeros y niños. Desde 2007 acerca las fragancias a quienes las buscan, en su tienda física y, ahora, también en línea.",
+    "pillars": [
+      {
+        "title": "{years} años",
+        "text": "Dedicados a los perfumes y productos afines en Panamá desde {founded}."
+      },
+      {
+        "title": "Para toda la familia",
+        "text": "Perfumes, estuches de regalo y testers para damas, caballeros y niños."
+      },
+      {
+        "title": "Tienda y en línea",
+        "text": "Visítanos en el C.C. Los Pueblos 2000 o compra desde tu casa."
+      },
+      {
+        "title": "Atención personalizada",
+        "text": "Te ayudamos a elegir: pregúntale a nuestra asesora antes de comprar."
+      }
+    ],
+    "mission": "Ser la empresa de referencia en la venta y distribución de perfumes en Panamá, llegando a cuantas más personas sea posible.",
+    "vision": "Ser la primera opción para comprar perfumes al detal o al por mayor, con una de las colecciones más amplias, tanto en la tienda como en línea.",
+    "values": "Primero las personas, después la venta: respeto, dedicación, trabajo en equipo y compromiso.",
+    "where": "C.C. Los Pueblos 2000, Local 3A5, Pasillo La Onda, Panamá",
+    "note": "Texto de ejemplo basado en la información pública de D'Luxe Perfumería. El contenido final lo define la empresa."
+  }
 }
