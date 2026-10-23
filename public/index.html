@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <script>try{document.documentElement.dataset.theme=localStorage.getItem('aurelia-theme')||'limon'}catch(e){document.documentElement.dataset.theme='limon'}</script>
+  <script>try{var q=new URLSearchParams(location.search).get('tema');document.documentElement.dataset.theme=q==='shop'||q==='limon'?q:localStorage.getItem('aurelia-theme')||'limon'}catch(e){document.documentElement.dataset.theme='limon'}</script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{BRAND_NAME}}</title>
   <meta name="description" content="{{BRAND_NAME}}: perfumes para damas, caballeros y niños, estuches y testers. Inventario en tiempo real.">

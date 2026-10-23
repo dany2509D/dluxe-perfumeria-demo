@@ -277,6 +277,8 @@ npm run deploy                                # arma, empaqueta la función y pu
 <p><a href="https://mi-demo.netlify.app/" target="_blank" rel="noopener">Abrir la demo en pantalla completa</a></p>
 ```
 
+Para elegir el diseño de la tienda dentro del iframe, agrega `?tema=shop` o `?tema=limon` a la dirección. Dentro de un iframe el enlace «Panel» se abre en una pestaña nueva (el panel no se puede incrustar).
+
 Si esa página define una política de seguridad (CSP), debe permitir `frame-src https://mi-demo.netlify.app`. El chat solo, como botón flotante: `<script src="https://mi-demo.netlify.app/embed.js" async></script>`.
 
 Probar el despliegue sin publicar (emulador de Netlify en tu equipo): `npx netlify-cli dev` (arma antes con `npm run build:netlify`).

@@ -824,6 +824,12 @@ function parallax() {
 function bind() {
   document.addEventListener('click', (e) => {
     const t = e.target;
+    // Dentro de un iframe en otra página, el panel no se puede mostrar (por seguridad nunca se incrusta): se abre en una pestaña nueva.
+    const adminLink = t.closest('a[href^="/admin"]');
+    if (adminLink && window.self !== window.top) {
+      e.preventDefault();
+      return void window.open(adminLink.href, '_blank', 'noopener');
+    }
     const open = t.closest('[data-open]');
     if (open) return openProduct(open.dataset.open);
     const info = t.closest('[data-info]');
