@@ -249,6 +249,13 @@ describe('sesiones firmadas y proxy en la app', () => {
     assert.equal(ancestors('*'), "'self' *");
     assert.equal(ancestors('https://a.com:8443, http://localhost:3000, a.com, https://a.com/ruta, data:text/html'), "'self' https://a.com:8443 http://localhost:3000");
   });
+  test('ancestors(): «https://*.sitio.com» admite subdominios, pero no comodines demasiado amplios ni mal puestos', () => {
+    assert.equal(ancestors('https://*.mi-sitio.netlify.app'), "'self' https://*.mi-sitio.netlify.app");
+    assert.equal(ancestors('https://mi-sitio.netlify.app, https://*.mi-sitio.netlify.app, http://localhost:3000'), "'self' https://mi-sitio.netlify.app https://*.mi-sitio.netlify.app http://localhost:3000");
+    for (const malo of ['https://*.com', 'https://*', 'https://a.*.com', 'https://*.a.com/ruta', 'https://**.a.com', '*.a.com', 'https://a.com.*']) {
+      assert.equal(ancestors(malo), "'self'", malo);
+    }
+  });
 });
 
 describe('sitio estático para Netlify (scripts/build-netlify.mjs)', () => {

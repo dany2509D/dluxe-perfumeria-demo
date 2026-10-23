@@ -258,13 +258,13 @@ npx netlify-cli login                         # abre el navegador para autorizar
 npx netlify-cli sites:create --name mi-demo   # crea el sitio (el nombre da la dirección mi-demo.netlify.app)
 npx netlify-cli env:set ADMIN_PASSWORD "una-clave-para-el-panel"
 npx netlify-cli env:set FRAME_ORIGINS "https://tu-sitio.com"   # quién puede mostrar la tienda dentro de su página (iframe)
-npm run deploy                                # arma, empaqueta la función y publica
+npm run deploy                                # arma (con las variables de Netlify), empaqueta la función y publica
 ```
 
 | Variable de Netlify | Para qué |
 |---|---|
 | `ADMIN_PASSWORD` | Contraseña del panel (`/admin`). Sin ella se usa `admin123`, que se muestra en pantalla: solo para pruebas. |
-| `FRAME_ORIGINS` | Sitios que pueden mostrar la tienda en un iframe (varios, separados por coma). Por defecto, ninguno. El panel nunca se puede incrustar. |
+| `FRAME_ORIGINS` | Sitios que pueden mostrar la tienda en un iframe (varios, separados por coma). Admite `https://*.sitio.com` para todos los subdominios de un dominio propio. Ojo: las vistas previas de Netlify (`deploy-preview-N--tu-sitio.netlify.app`) no son subdominios de `tu-sitio.netlify.app` y ningún comodín razonable las cubre; para probar una, agrega su dirección exacta y quítala después. Por defecto, ninguno. El panel nunca se puede incrustar. |
 | `EMBED_ORIGINS` | Sitios que pueden mostrar el chat (`/embed.js`) en otro sitio. |
 | `DEMO_SHOW_ADMIN_PASSWORD=1` | Muestra la contraseña del panel en su pantalla de acceso, para que quien pruebe la demo pueda entrar. Solo para demostraciones públicas. |
 | `ANTHROPIC_API_KEY`, `STORE_WHATSAPP`, `BRAND_NAME`… | Igual que en local (ver más arriba). |
@@ -280,6 +280,8 @@ npm run deploy                                # arma, empaqueta la función y pu
 Para elegir el diseño de la tienda dentro del iframe, agrega `?tema=shop` o `?tema=limon` a la dirección. Dentro de un iframe el enlace «Panel» se abre en una pestaña nueva (el panel no se puede incrustar).
 
 Si esa página define una política de seguridad (CSP), debe permitir `frame-src https://mi-demo.netlify.app`. El chat solo, como botón flotante: `<script src="https://mi-demo.netlify.app/embed.js" async></script>`.
+
+Nota: `npm run deploy` arma el sitio *antes* de publicar a propósito; la CLI de Netlify lee las cabeceras (`_headers`) antes de compilar y, con `deploy --build`, publicaría las de la compilación anterior.
 
 Probar el despliegue sin publicar (emulador de Netlify en tu equipo): `npx netlify-cli dev` (arma antes con `npm run build:netlify`).
 
