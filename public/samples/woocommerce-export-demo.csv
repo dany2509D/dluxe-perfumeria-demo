@@ -1,0 +1,44 @@
+﻿ID,Tipo,SKU,Nombre,Publicado,¿Está destacado?,Visibilidad en el catálogo,Descripción corta,Descripción,¿Existencias?,Inventario,Precio rebajado,Precio normal,Categorías,Etiquetas,Imágenes,Superior,Nombre del atributo 1,Valor(es) del atributo 1,Nombre del atributo 2,Valor(es) del atributo 2
+1001,simple,PF-1001,Noche de Jazmín 50ml,1,0,visible,,<p>Jazmín nocturno con <strong>ámbar</strong> suave.</p>,1,14,,62,Perfumes > Damas,Nuevo,,,Marca,Maison Ébène,Familia olfativa,Floral
+1002,simple,PF-1002,Noche de Jazmín 100ml,1,0,visible,,<p>Jazmín nocturno con <strong>ámbar</strong> suave.</p>,1,9,,98,Perfumes > Damas,Nuevo,,,Marca,Maison Ébène,Familia olfativa,Floral
+1003,simple,PF-1003,Rosa Imperial 100ml,1,0,visible,,Rosa de Damasco y peonía.,1,7,84,105,Perfumes > Damas,,,,Marca,Maison Ébène,Notas,"rosa, peonía, pachulí"
+1004,simple,PF-1004,Rosa Imperial 50ml,1,0,visible,,Rosa de Damasco y peonía.,1,11,,68,Perfumes > Damas,,,,Marca,Maison Ébène,,
+1005,simple,PF-1005,Vainilla Dorada 30 ml,1,0,visible,,"Vainilla, caramelo y sándalo.",1,20,,45,Perfumes > Damas,,,,Marca,D’Luxe Privé,,
+1006,simple,PF-1006,Vainilla Dorada 100 ml,1,0,visible,,"Vainilla, caramelo y sándalo.",1,6,99,125,Perfumes > Damas,,,,Marca,D’Luxe Privé,,
+2001,variable,,Cedro & Cuero,1,0,visible,,<ul><li>Cedro</li><li>Cuero</li><li>Tabaco</li></ul>,1,,,,Perfumes > Caballeros,,,,Marca,Atelier Sol,Tamaño,"50 ml, 100 ml"
+2002,variation,CC-50,Cedro & Cuero - 50 ml,1,0,visible,,,1,12,,72,,,,id:2001,,,Tamaño,50 ml
+2003,variation,CC-100,Cedro & Cuero - 100 ml,1,0,visible,,,1,5,95,118,,,,id:2001,,,Tamaño,100 ml
+2010,variable,,Medianoche Negro,1,0,visible,,Pimienta negra y limón.,1,,,,Perfumes > Hombre,,,,Marca,Maison Ébène,Tamaño,"30, 50, 100"
+2011,variation,MN-30,Medianoche Negro 30,1,0,visible,,,1,3,,48,,,,id:2010,,,Tamaño,30
+2012,variation,MN-50,Medianoche Negro 50,1,0,visible,,,1,8,,73,,,,id:2010,,,Tamaño,50
+2013,variation,MN-100,Medianoche Negro 100,1,0,visible,,,1,0,,109,,,,id:2010,,,Tamaño,100
+3001,simple,ES-3001,Set Vetiver Real 100ml + miniatura,1,0,visible,,Estuche de regalo.,1,6,,150,Estuches > Caballeros,,,,Marca,Maison Ébène,,
+3002,simple,ES-3002,Estuche Rosa Imperial,1,0,visible,,Estuche con crema corporal.,1,4,118,143,Estuches > Damas,,,,Marca,Maison Ébène,,
+3003,simple,TS-3003,Tester Rosa Imperial 100ml,1,0,visible,,,1,3,,70,Testers > Damas,,,,Marca,Maison Ébène,,
+3004,simple,IN-3004,Gotas de Luna 50ml,1,0,visible,,Fresca y dulce para niñas.,1,15,,32,Perfumes > Niñas,,,,Marca,Pequeño Lux,,
+3005,simple,IN-3005,Aventura Marina 50ml,1,0,visible,,Cítrica para niños.,1,10,,30,Perfumes > Niños,,,,Marca,Pequeño Lux,,
+3006,simple,UN-3006,Oud Majestad 100ml,1,0,visible,,"Oud, rosa y azafrán.",1,5,,210,Perfumes > Unisex,,,,Marca,Al Najma,,
+3007,simple,BR-3007,Brisa Marina 3.4 oz,1,0,visible,,Sal marina y bergamota.,1,17,,66,Perfumes > Unisex,,,,Marca,Atelier Sol,,
+4001,simple,MB-4001,Ámbar Nocturno 100ml,1,0,visible,,,1,8,,128,Perfumes > Unisex,,,,,,,
+4002,simple,MB-4002,Bosque Mágico 50ml,1,0,visible,,,1,12,,30,Perfumes,,,,,,,
+4003,simple,MB-4003,Flor de Algodón 100ml,1,0,visible,,,1,9,,48,Perfumes > Damas,,,,,,,
+4004,simple,SP-4004,Citrus Solar 50ml,1,0,visible,,Naranja y limón.,1,11,,,Perfumes > Damas,,,,Marca,Atelier Sol,,
+4005,simple,SP-4005,Té Blanco 100ml,1,0,visible,,"Té blanco, pera.",1,10,,0,Perfumes > Unisex,,,,Marca,Atelier Sol,,
+4006,simple,OF-4006,Cereza Noir 50ml,1,0,visible,,Cereza negra.,1,6,95,80,Perfumes > Damas,,,,Marca,Maison Ébène,,
+4007,simple,AC-4007,Neceser de viaje,1,0,visible,,Accesorio.,1,25,,19.90,Accesorios,,,,,,,
+4008,simple,AC-4008,Crema corporal Rosa 200ml,1,0,visible,,Hidratante.,1,30,,22,Cuidado corporal,,,,Marca,Maison Ébène,,
+4009,simple,AC-4009,Vela aromática,1,0,visible,,,1,14,,28,,,,,,,,
+4010,simple,PF-1001,Noche de Jazmín 30ml,1,0,visible,,SKU repetido a propósito.,1,4,,42,Perfumes > Damas,,,,Marca,Maison Ébène,,
+4011,simple,,Aqua Viva 50ml,1,0,visible,,,1,5,,55,Perfumes > Hombres,,,,Marca,Atelier Sol,,
+4012,simple,,Aqua Viva 100ml,1,0,visible,,,1,5,,85,Perfumes > Hombres,,,,Marca,Atelier Sol,,
+4013,simple,BC-4013,Brisa Cítrica 100ml,1,0,visible,,,1,,,58,Perfumes > Damas,,,,Marca,Atelier Sol,,
+4014,simple,BC-4014,Lluvia de Verano 100ml,1,0,visible,,,1,,,61,Perfumes > Damas,,,,Marca,Atelier Sol,,
+4015,simple,BC-4015,Madera Real 100ml,1,0,visible,,,0,-4,,88,Perfumes > Caballeros,,,,Marca,Al Najma,,
+4016,simple,BC-4016,Seda de Oriente 100ml,1,0,visible,,,1,abc,,92,Perfumes > Damas,,,,Marca,Al Najma,,
+4017,simple,BC-4017,Colección Otoño 100ml,0,0,visible,,,1,9,,70,Perfumes > Damas,,,,Marca,Maison Ébène,,
+4018,simple,BC-4018,Prueba interna 50ml,-1,0,visible,,,1,1,,10,Perfumes > Damas,,,,,,,
+4019,external,,Perfume de afiliado,1,0,visible,,,1,,,60,Perfumes,,,,,,,
+4020,grouped,,Pack familiar,1,0,visible,,,1,,,,Estuches,,,,,,,
+4021,variable,,Producto sin variaciones,1,0,visible,,,1,,,,Perfumes > Damas,,,,Marca,Atelier Sol,,
+1001,simple,PF-DUP,Fila con ID repetido,1,0,visible,,,1,1,,10,Perfumes > Damas,,,,,,,
+4022,simple,NM-4022,,1,0,visible,,,1,1,,10,Perfumes > Damas,,,,,,,

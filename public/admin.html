@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem('aurelia-theme')||'limon'}catch(e){document.documentElement.dataset.theme='limon'}</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Panel · {{BRAND_NAME}}</title>
+  <!--BRAND-->
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%231d0b0d'/%3E%3Cpath d='M16 5l2.2 7.8L26 16l-7.8 2.2L16 27l-2.2-8.8L6 16l7.8-3.2z' fill='%23f7ea48'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/admin.css">
+  <link rel="stylesheet" href="/css/theme-shop.css">
+</head>
+<body class="dark admin-page">
+  <a class="skip" href="#view">Saltar al contenido</a>
+
+  <!-- Acceso -->
+  <section class="login dark" id="login" hidden aria-labelledby="login-title">
+    <form class="login-card" id="login-form">
+      <p class="wordmark">{{BRAND_SHORT}}</p>
+      <h1 class="h" id="login-title">Panel de administración</h1>
+      <label class="field">
+        <span>Contraseña</span>
+        <input type="password" id="login-pw" autocomplete="current-password" required autofocus>
+      </label>
+      <p class="err-text" id="login-err" role="alert"></p>
+      <button type="submit" class="btn btn-lemon btn-block">Entrar</button>
+      {{ADMIN_HINT}}
+      <a class="link-arrow" href="/">Volver a la tienda</a>
+    </form>
+  </section>
+
+  <!-- Aplicación -->
+  <div class="app" id="app" hidden>
+    <aside class="sidebar dark" aria-label="Navegación del panel">
+      <div class="side-brand">
+        <p class="wordmark" data-initial="{{BRAND_INITIAL}}">{{BRAND_SHORT}}</p>
+        <p class="caption upper muted">Panel de control</p>
+      </div>
+      <nav class="side-nav" id="side-nav"></nav>
+      <div class="side-foot">
+        <a class="side-link" href="/" target="_blank" rel="noopener" id="link-store"></a>
+        <button type="button" class="side-link" id="btn-seed"></button>
+        <button type="button" class="side-link" id="btn-reset"></button>
+        <button type="button" class="side-link" id="btn-logout"></button>
+      </div>
+    </aside>
+
+    <main class="main dark" id="main">
+      <header class="page-head">
+        <div>
+          <p class="caption upper muted" id="page-kicker"></p>
+          <h1 class="h-lg" id="page-title"></h1>
+        </div>
+        <div class="page-actions" id="page-actions"></div>
+      </header>
+      <div id="view" tabindex="-1"></div>
+    </main>
+  </div>
+
+  <dialog id="modal" class="light mdialog" aria-labelledby="modal-title">
+    <div class="m-head">
+      <h2 class="h-sm" id="modal-title"></h2>
+      <button type="button" class="icon-btn" data-modal-close aria-label="Cerrar" id="modal-x"></button>
+    </div>
+    <form id="modal-form" novalidate>
+      <div class="m-body" id="modal-body"></div>
+      <div class="err-text m-err" id="modal-err" role="alert"></div>
+      <div class="m-foot" id="modal-foot"></div>
+    </form>
+  </dialog>
+
+  <script type="module" src="/js/admin.js"></script>
+</body>
+</html>

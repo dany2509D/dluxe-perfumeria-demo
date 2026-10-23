@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem('aurelia-theme')||'limon'}catch(e){document.documentElement.dataset.theme='limon'}</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{BRAND_NAME}}</title>
+  <meta name="description" content="{{BRAND_NAME}}: perfumes para damas, caballeros y niños, estuches y testers. Inventario en tiempo real.">
+  <!--BRAND-->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%231d0b0d'/%3E%3Cpath d='M16 5l2.2 7.8L26 16l-7.8 2.2L16 27l-2.2-8.8L6 16l7.8-3.2z' fill='%23f7ea48'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/store.css">
+  <link rel="stylesheet" href="/css/chat.css">
+  <link rel="stylesheet" href="/css/theme-shop.css">
+  <script>document.documentElement.classList.add('js')</script>
+</head>
+<body class="dark">
+  <a class="skip" href="#catalogo">Saltar al catálogo</a>
+
+  <header class="topbar dark">
+    <div class="topbar-inner">
+      <nav class="nav nav-left" aria-label="Categorías" id="nav-cats">
+        <a href="#catalogo" data-cat="" class="nav-link is-active">Todo</a>
+        <a href="#catalogo" data-cat="Damas" class="nav-link">Damas</a>
+        <a href="#catalogo" data-cat="Caballeros" class="nav-link">Caballeros</a>
+        <a href="#catalogo" data-cat="Infantil" class="nav-link">Infantil</a>
+        <a href="#catalogo" data-view="sale" class="nav-link">Ofertas</a>
+        <button type="button" data-view="brands" class="nav-link">Marcas</button>
+      </nav>
+      <a class="wordmark" href="/" aria-label="{{BRAND_NAME}}, inicio">{{BRAND_SHORT}}</a>
+      <nav class="nav nav-right" aria-label="Cuenta y bolsa">
+        <a href="/admin" class="nav-link nav-admin">Panel</a>
+        <button type="button" class="nav-link nav-bag" id="cart-btn" aria-label="Abrir la bolsa">
+          <span class="bag-icon" id="bag-icon"></span>
+          <span>Bolsa</span>
+          <span class="bag-count" id="cart-count" aria-live="polite">0</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero dark" aria-labelledby="hero-title">
+      <div class="hero-inner">
+        <div class="hero-text">
+          <p class="caption upper hero-kicker rise" style="--d:100ms">{{BRAND_TAGLINE}} · Colección de temporada</p>
+          <h1 class="display-xl accent limon-only" id="hero-title"><span class="mask"><span class="mask-in">Esencia</span></span><span class="mask"><span class="mask-in">nocturna</span></span></h1>
+          <p class="body-lg hero-sub rise" style="--d:650ms">Fragancias que se encienden al caer la tarde. Elige la tuya, nosotros nos encargamos del resto.</p>
+          <div class="hero-cta rise" style="--d:800ms">
+            <a class="btn btn-lemon" href="#catalogo">Ver la colección</a>
+            <a class="btn btn-outline" href="#destacado">La pieza de la casa</a>
+          </div>
+        </div>
+        <div class="hero-art" id="hero-art" aria-hidden="true"></div>
+
+        <!-- Diseño "Shop": tarjetas flotantes, marca, búsqueda y categorías -->
+        <div class="shop-hero shop-only">
+          <div class="float-row" id="float-row"></div>
+          <h1 class="shop-mark" id="shop-title">{{BRAND_SHORT}}</h1>
+          <form class="hero-search" id="hero-search" role="search">
+            <label class="sr-only" for="q-hero">Buscar fragancias</label>
+            <input type="search" id="q-hero" placeholder="¿Qué fragancia buscas hoy?" autocomplete="off">
+            <button type="submit" class="search-go" aria-label="Buscar"></button>
+          </form>
+          <div class="cat-pills" id="cat-pills" role="group" aria-label="Familias olfativas"></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="marquee dark" aria-hidden="true">
+      <div class="marquee-track" id="marquee-track"></div>
+    </div>
+
+    <section class="catalog light" id="catalogo" aria-labelledby="catalog-title">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <h2 class="h-lg accent" id="catalog-title">La colección</h2>
+          <p class="body-lg muted">Perfumes, estuches de regalo y testers. El stock que ves es el real: se actualiza con cada venta.</p>
+        </div>
+
+        <div class="filters" id="filters">
+          <div class="filters-top" role="search">
+            <label class="field toolbar-search">
+              <span class="sr-only">Buscar</span>
+              <input type="search" id="q" placeholder="Buscar fragancia, marca o nota" autocomplete="off">
+            </label>
+            <label class="field">
+              <span class="sr-only">Ordenar por</span>
+              <select id="sort">
+                <option value="">Recomendados</option>
+                <option value="novedades">Novedades</option>
+                <option value="precio-asc">Precio: menor a mayor</option>
+                <option value="precio-desc">Precio: mayor a menor</option>
+                <option value="descuento">Mayor descuento</option>
+                <option value="nombre">Nombre (A–Z)</option>
+              </select>
+            </label>
+            <button type="button" class="btn btn-outline btn-sm filters-toggle" id="filters-toggle" aria-expanded="false" aria-controls="filters-body">Filtros <span class="filters-count" id="filters-count" hidden></span></button>
+          </div>
+          <div class="filters-body" id="filters-body">
+            <div class="seg" role="group" aria-label="Categoría" id="seg-cats"></div>
+            <div class="seg" role="group" aria-label="Tipo de producto" id="seg-kinds"></div>
+            <div class="filters-row">
+              <label class="field"><span class="sr-only">Marca</span><select id="brand"><option value="">Todas las marcas</option></select></label>
+              <label class="field"><span class="sr-only">Familia olfativa</span><select id="family"><option value="">Todas las familias</option></select></label>
+              <label class="field"><span class="sr-only">Precio máximo</span><select id="price-max"></select></label>
+            </div>
+            <div class="toggles">
+              <label class="chk"><input type="checkbox" id="f-sale"><span>Ofertas</span></label>
+              <label class="chk"><input type="checkbox" id="f-new"><span>Novedades</span></label>
+              <label class="chk"><input type="checkbox" id="f-stock"><span>Solo disponibles</span></label>
+              <button type="button" class="btn btn-text btn-sm js-clear" id="clear-filters" hidden>Limpiar filtros</button>
+            </div>
+          </div>
+        </div>
+
+        <p class="result-count caption upper muted" id="result-count" aria-live="polite"></p>
+        <div class="grid" id="grid"></div>
+        <nav class="pager" id="pager" aria-label="Paginación del catálogo" hidden></nav>
+      </div>
+    </section>
+
+    <section class="band dark" id="band" aria-label="Nuestra filosofía" hidden>
+      <img class="band-img" id="band-img" src="/img/feature.jpg" alt="" loading="lazy" decoding="async">
+      <div class="band-text reveal">
+        <p class="caption upper">{{BRAND_TAGLINE}}</p>
+        <p class="display accent">El arte de llevar un recuerdo en la piel</p>
+        <p class="body-lg">Cada frasco guarda una hora del día. Elige la que quieres volver a vivir.</p>
+      </div>
+    </section>
+
+    <section class="feature forest" id="destacado" aria-labelledby="feature-title">
+      <div class="feature-inner" id="feature"></div>
+    </section>
+  </main>
+
+  <footer class="footer dark">
+    <div class="wrap footer-grid reveal">
+      <div>
+        <p class="wordmark footer-mark">{{BRAND_SHORT}}</p>
+        <p class="muted footer-note">{{DEMO_NOTE}}</p>
+      </div>
+      <div>
+        <h3 class="caption upper accent">Tienda</h3>
+        <ul class="footer-list">
+          <li><a href="#catalogo" data-cat="Damas">Damas</a></li>
+          <li><a href="#catalogo" data-cat="Caballeros">Caballeros</a></li>
+          <li><a href="#catalogo" data-cat="Infantil">Infantil</a></li>
+          <li><a href="#catalogo" data-view="sale">Ofertas</a></li>
+          <li><button type="button" class="footer-link" data-view="brands">Marcas</button></li>
+        </ul>
+      </div>
+      <div>
+        <h3 class="caption upper accent">Atención</h3>
+        <ul class="footer-list" id="footer-contact">
+          <li>Retiro en tienda o envío a domicilio</li>
+          <li>Pago con tarjeta, transferencia o contra entrega</li>
+        </ul>
+        <ul class="footer-list footer-links">
+          <li><button type="button" class="footer-link" data-info="envios">Envíos y pagos</button></li>
+          <li><button type="button" class="footer-link" data-info="contacto">Contacto</button></li>
+          <li><button type="button" class="footer-link" data-info="nosotros">Nosotros</button></li>
+        </ul>
+        <p class="footer-admin"><a href="/admin">Panel de administración</a></p>
+      </div>
+    </div>
+  </footer>
+
+  <button type="button" class="to-top" id="to-top" aria-label="Volver arriba" hidden></button>
+
+  <!-- Detalle de producto -->
+  <dialog id="product-dialog" class="dark pdialog" aria-labelledby="pd-name">
+    <button type="button" class="icon-btn pd-close" data-close aria-label="Cerrar"></button>
+    <div class="pd-grid">
+      <div class="pd-art" id="pd-art"></div>
+      <div class="pd-info">
+        <p class="caption upper muted" id="pd-meta"></p>
+        <h2 class="h-lg" id="pd-name"></h2>
+        <p class="body-lg pd-desc" id="pd-desc"></p>
+        <p class="pd-notes"><span class="label">Notas</span><span id="pd-notes"></span></p>
+
+        <fieldset class="sizes">
+          <legend class="label">Tamaño</legend>
+          <div class="size-list" id="pd-sizes"></div>
+        </fieldset>
+
+        <div class="pd-buy">
+          <div>
+            <p class="pd-price h" id="pd-price"></p>
+            <p class="caption" id="pd-stock" aria-live="polite"></p>
+          </div>
+          <div class="stepper" role="group" aria-label="Cantidad">
+            <button type="button" id="pd-minus" aria-label="Menos"></button>
+            <output id="pd-qty" aria-live="polite">1</output>
+            <button type="button" id="pd-plus" aria-label="Más"></button>
+          </div>
+        </div>
+        <button type="button" class="btn btn-lemon btn-block" id="pd-add">Agregar a la bolsa</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Marcas -->
+  <dialog id="brands-dialog" class="dark bdialog" aria-labelledby="brands-title">
+    <div class="b-head">
+      <h2 class="h" id="brands-title">Marcas</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Cerrar" id="brands-close"></button>
+    </div>
+    <div class="b-body" id="brands-body"></div>
+  </dialog>
+
+  <!-- Información -->
+  <dialog id="info-dialog" class="dark bdialog" aria-labelledby="info-title">
+    <div class="b-head">
+      <h2 class="h" id="info-title"></h2>
+      <button type="button" class="icon-btn" data-close aria-label="Cerrar" id="info-close"></button>
+    </div>
+    <div class="b-body info-body" id="info-body"></div>
+  </dialog>
+
+  <!-- Bolsa -->
+  <dialog id="cart-dialog" class="dark drawer" aria-labelledby="cart-title">
+    <div class="drawer-head">
+      <h2 class="h" id="cart-title">Tu bolsa</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Cerrar la bolsa" id="cart-close"></button>
+    </div>
+    <div class="drawer-body" id="cart-body"></div>
+    <div class="drawer-foot" id="cart-foot"></div>
+  </dialog>
+
+  <!-- Compra -->
+  <dialog id="checkout-dialog" class="dark cdialog" aria-labelledby="co-title">
+    <div id="co-content"></div>
+  </dialog>
+
+  <script type="module" src="/js/store.js"></script>
+  <script type="module" src="/js/chat.js"></script>
+</body>
+</html>

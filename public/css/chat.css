@@ -1,0 +1,89 @@
+/* Asistente de compras. Diseño Limón por defecto; el tema Shop lo redefine en theme-shop.css. */
+.chat-launcher {
+  position: fixed; right: 24px; bottom: 24px; z-index: 45; display: inline-flex; align-items: center; gap: 10px;
+  min-height: 52px; padding: 0 20px 0 16px; background: var(--olive); color: var(--lemon);
+  border: 1px solid var(--lemon); border-radius: var(--radius);
+  font-size: 15px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  transition: background-color 0.18s, color 0.18s;
+}
+.chat-launcher:hover { background: var(--lemon); color: var(--olive); }
+.chat-open .chat-launcher { display: none; }
+.to-top { bottom: 92px; }
+
+.chat-panel {
+  position: fixed; right: 24px; bottom: 24px; z-index: 55; width: min(400px, calc(100vw - 24px)); height: min(640px, calc(100dvh - 48px));
+  display: flex; flex-direction: column; border: 1px solid var(--line-strong); border-radius: var(--radius);
+  animation: fade-in 0.2s ease-out;
+}
+.chat-panel[hidden] { display: none; }
+.chat-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 10px 14px 20px; border-bottom: 1px solid var(--line); }
+.chat-title { font-size: 22px; font-weight: 500; letter-spacing: 0.04em; line-height: 1.1; }
+.chat-sub { font-size: 13px; color: var(--fg-muted); letter-spacing: 0.04em; }
+.chat-tools { display: flex; gap: 2px; }
+
+.chat-log { flex: 1; overflow-y: auto; padding: 18px 18px 8px; display: flex; flex-direction: column; gap: 14px; overscroll-behavior: contain; }
+.msg { display: flex; flex-direction: column; gap: 10px; max-width: 100%; }
+.msg-user { align-items: flex-end; }
+.msg-bot { align-items: flex-start; }
+.bubble { max-width: 88%; padding: 10px 14px; font-size: 15px; line-height: 1.45; letter-spacing: 0.02em; overflow-wrap: anywhere; }
+.bubble p + p, .bubble ul + p, .bubble p + ul { margin-top: 8px; }
+.bubble ul { margin: 0; padding-left: 18px; }
+.bubble li + li { margin-top: 3px; }
+.msg-bot .bubble { background: rgb(252 249 240 / 0.08); border: 1px solid var(--line); }
+.msg-user .bubble { background: var(--fg); color: var(--bg); }
+
+.dots { display: inline-flex; gap: 5px; padding: 4px 0; }
+.dots i { width: 7px; height: 7px; background: currentColor; border-radius: 50%; opacity: 0.35; animation: dot 1.1s infinite ease-in-out; }
+.dots i:nth-child(2) { animation-delay: 0.15s; }
+.dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes dot { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+.chat-status { font-size: 13px; color: var(--fg-muted); letter-spacing: 0.04em; }
+.chat-error { font-size: 14px; color: #ff9a9a; letter-spacing: 0.02em; }
+.chat-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; letter-spacing: 0.02em; color: var(--fg-accent); }
+.chat-note svg { flex: none; }
+.chat-note button { background: none; border: 0; padding: 2px 0; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+
+/* Tarjetas de producto dentro del chat */
+.chat-cards { display: grid; gap: 8px; width: 100%; }
+.chat-card { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; align-items: stretch; border: 1px solid var(--line); background: rgb(252 249 240 / 0.05); }
+.chat-card-img { position: relative; display: block; width: 84px; min-height: 84px; padding: 0; border: 0; background: var(--tile); overflow: hidden; }
+.chat-card-img img, .chat-card-img svg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.chat-card-img svg { inset: 8% 14%; width: 72%; height: 84%; object-fit: contain; }
+.chat-card.is-out img { filter: grayscale(1); opacity: 0.55; }
+.chat-card-body { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 8px 12px 8px 0; min-width: 0; }
+.cc-name { font-size: 16px; font-weight: 500; letter-spacing: 0.02em; }
+.cc-meta { font-size: 13px; color: var(--fg-muted); letter-spacing: 0.03em; }
+.cc-btn { align-self: flex-start; margin-top: 6px; padding: 0; background: none; border: 0; color: var(--fg-accent); font: inherit; font-size: 14px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; text-decoration: underline; text-underline-offset: 4px; }
+
+.chat-suggest { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 18px 10px; }
+.chat-suggest button { padding: 7px 12px; background: none; border: 1px solid var(--line-strong); border-radius: var(--radius); color: inherit; font-size: 13px; letter-spacing: 0.03em; text-align: left; }
+.chat-suggest button:hover { background: rgb(252 249 240 / 0.1); }
+
+.chat-form { display: flex; align-items: flex-end; gap: 8px; padding: 10px 14px 6px; border-top: 1px solid var(--line); }
+.chat-form textarea { min-height: 44px; max-height: 112px; resize: none; padding: 10px 14px; line-height: 1.4; }
+.chat-send { flex: none; width: 44px; height: 44px; display: grid; place-items: center; padding: 0; background: var(--lemon); color: var(--olive); border: 0; border-radius: var(--radius); }
+.chat-send:hover:not(:disabled) { background: var(--white); }
+.chat-send:disabled { opacity: 0.4; cursor: not-allowed; }
+.chat-foot { padding: 2px 16px 12px; font-size: 12px; color: var(--fg-muted); letter-spacing: 0.02em; text-align: center; }
+
+@media (max-width: 560px) {
+  .chat-open .theme-switch { display: none; }
+  .chat-launcher { right: 14px; bottom: 14px; padding: 0 16px; }
+  .chat-launcher-label { display: none; }
+  .chat-launcher { width: 52px; padding: 0; justify-content: center; }
+  .to-top { right: 14px; bottom: 78px; }
+  .chat-panel { inset: 0; width: 100%; height: 100dvh; max-width: none; border: 0; border-radius: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .dots i { animation: none; opacity: 0.6; } }
+
+/* Enlace para hablar con una persona (WhatsApp) */
+.chat-link { align-self: flex-start; display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; background: var(--lemon); color: var(--olive); border-radius: var(--radius); font-size: 14px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; text-decoration: none; }
+.chat-link:hover { background: var(--white); }
+.cc-tag { display: inline-block; margin-left: 4px; padding: 1px 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; border: 1px solid currentColor; border-radius: var(--radius); vertical-align: 1px; }
+.chat-card .was, .was { font-weight: 400; opacity: 0.6; font-size: 0.85em; margin-left: 2px; }
+
+/* Dentro de un iframe en otro sitio (ver embed.js): el panel ocupa todo el marco. */
+html[data-embed] body { margin: 0; min-height: 100dvh; background: transparent; }
+html[data-embed] .chat-panel.chat-embed { position: static; width: 100%; height: 100dvh; max-height: none; border-radius: 0; border-width: 0; animation: none; }
+html[data-embed] .theme-switch, html[data-embed] .to-top { display: none !important; }
+.chat-link { display: inline-block; }

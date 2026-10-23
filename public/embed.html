@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="es" data-embed>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Asistente · {{BRAND_NAME}}</title>
+  <!--BRAND-->
+  <link rel="icon" href="data:,">
+  <script>
+    // El sitio que lo muestra puede pedir un diseño: /embed?theme=shop
+    try {
+      var t = new URLSearchParams(location.search).get('theme');
+      document.documentElement.dataset.theme = t === 'shop' ? 'shop' : 'limon';
+    } catch (e) { document.documentElement.dataset.theme = 'limon'; }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/chat.css">
+  <link rel="stylesheet" href="/css/theme-shop.css">
+</head>
+<body class="dark">
+  <script type="module" src="/js/chat.js"></script>
+</body>
+</html>
