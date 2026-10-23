@@ -191,6 +191,20 @@ export function getProductsByIds(db, ids) {
 
 export const getProduct = (db, id) => getProductsByIds(db, [id])[0] ?? null;
 
+// Productos parecidos para recomendar en la página de un producto: misma marca (+3), misma familia olfativa (+2), misma
+// categoría (+1) y mismo tipo (+1). Primero los que hay en existencia; a igualdad de puntaje, los más vendidos.
+export function relatedProducts(db, id, limit = 8) {
+  const p = db.prepare('SELECT brand, family, category, kind FROM products WHERE id = ? AND active = 1').get(id);
+  if (!p) return null;
+  const n = Math.min(24, Math.max(1, Math.floor(Number(limit)) || 8));
+  const score = `, (CASE WHEN p.brand <> '' AND p.brand = ? THEN 3 ELSE 0 END + CASE WHEN p.family <> '' AND p.family = ? THEN 2 ELSE 0 END
+      + CASE WHEN p.category = ? THEN 1 ELSE 0 END + CASE WHEN p.kind = ? THEN 1 ELSE 0 END) AS score`;
+  const rows = db
+    .prepare(`SELECT * FROM (${BASE(score)} WHERE p.active = 1 AND p.id <> ? GROUP BY p.id) ORDER BY (total_stock > 0) DESC, score DESC, sold DESC, id ASC LIMIT ?`)
+    .all(p.brand, p.family, p.category, p.kind, id, n);
+  return attachVariants(db, rows);
+}
+
 // Productos (con todos sus tamaños) a los que pertenecen unas variantes: sirve para restaurar la bolsa de un cliente.
 export function getProductsByVariantIds(db, variantIds) {
   const ids = [...new Set((variantIds || []).filter(Number.isInteger))].slice(0, 50);

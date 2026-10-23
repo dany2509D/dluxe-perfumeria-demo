@@ -305,11 +305,11 @@ function mount() {
   });
   $('#chat-log').addEventListener('click', (e) => {
     if (e.target.closest('[data-chat-cart]')) window.dispatchEvent(new CustomEvent('aurelia:open-cart'));
-    // Dentro de otro sitio no existe la ficha de la tienda: se abre la página del producto (WooCommerce) o la tienda.
+    // Dentro de otro sitio no existe el recuadro de la tienda: se abre la página del producto en WooCommerce o, si no la tiene, la de la tienda.
     const open = EMBED && e.target.closest('[data-open]');
     if (open) {
       const card = state.messages.flatMap((m) => m.cards || []).find((c) => String(c.id) === open.dataset.open);
-      const url = card?.permalink || `${location.origin}/?q=${encodeURIComponent(card?.name || '')}`;
+      const url = card?.permalink || (card?.id ? `${location.origin}/#producto/${card.id}` : `${location.origin}/?q=${encodeURIComponent(card?.name || '')}`);
       window.open(url, '_blank', 'noopener,noreferrer');
     }
   });

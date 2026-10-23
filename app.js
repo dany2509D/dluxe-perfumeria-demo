@@ -9,6 +9,7 @@ import * as svc from './service.js';
 import { resetAndSeed, seedLarge } from './seed.js';
 import * as catalog from './catalog.js';
 import { loadBrand, publicBrand, renderBrandHtml } from './brand.js';
+import * as reviews from './reviews.js';
 import { ancestors } from './frames.js';
 import { buildChat } from './chat-env.js';
 import { sanitizeMessages, sanitizeContext, friendlyError } from './chatbot.js';
@@ -32,7 +33,7 @@ const MIME = {
 };
 const TOKEN_TTL = 12 * 3600e3;
 
-export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, chatFactory = buildChat, chatLimits = {}, woo = {}, embedOrigins = process.env.EMBED_ORIGINS || '', frameOrigins = process.env.FRAME_ORIGINS || '', trustProxy = process.env.TRUST_PROXY === '1', brand: brandOverride = null } = {}) {
+export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, chatFactory = buildChat, chatLimits = {}, reviewLimits = {}, woo = {}, embedOrigins = process.env.EMBED_ORIGINS || '', frameOrigins = process.env.FRAME_ORIGINS || '', trustProxy = process.env.TRUST_PROXY === '1', brand: brandOverride = null } = {}) {
   const brand = brandOverride ?? loadBrand();
   const db = openDb(dbPath);
   if (seedIfEmpty && !db.prepare('SELECT 1 FROM products LIMIT 1').get()) resetAndSeed(db);
@@ -54,6 +55,16 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, c
     daily: Number(chatLimits.daily ?? process.env.CHAT_DAILY_LIMIT ?? (local ? 5000 : 200)),
     parallel: Number(chatLimits.parallel ?? 2),
   };
+  // Reseñas: cualquiera puede publicar, así que hay un tope por visitante (en memoria, como el del chat).
+  const reviewLimit = { perIp: Number(reviewLimits.perIp ?? process.env.REVIEW_RATE_PER_HOUR ?? 5), windowMs: Number(reviewLimits.windowMs ?? 3600e3) };
+  const reviewHits = new Map();
+  function takeReviewSlot(ip) {
+    const now = Date.now();
+    const recent = (reviewHits.get(ip) || []).filter((t) => now - t < reviewLimit.windowMs);
+    if (recent.length >= reviewLimit.perIp) throw new HttpError(429, 'Has enviado varias reseñas seguidas. Inténtalo de nuevo más tarde.');
+    recent.push(now);
+    reviewHits.set(ip, recent);
+  }
   const hits = new Map(); // ip -> marcas de tiempo dentro de la ventana
   const active = new Map(); // ip -> chats en curso
   const day = { key: '', n: 0 };
@@ -121,7 +132,25 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, c
   route('GET', '/api/products/:id', ({ params }) => {
     const p = catalog.getProduct(db, Number(params.id));
     if (!p) throw new HttpError(404, 'Producto no encontrado');
-    return p;
+    const { avg, count } = reviews.summary(db, p.id);
+    return { ...p, rating: { avg, count } };
+  });
+  route('GET', '/api/products/:id/related', ({ params, query }) => {
+    const list = catalog.relatedProducts(db, Number(params.id), query.get('limit') || 8);
+    if (!list) throw new HttpError(404, 'Producto no encontrado');
+    return { products: list };
+  });
+  route('GET', '/api/products/:id/reviews', ({ params, query }) => {
+    if (!db.prepare('SELECT 1 FROM products WHERE id = ? AND active = 1').get(Number(params.id))) throw new HttpError(404, 'Producto no encontrado');
+    return reviews.listReviews(db, Number(params.id), { page: query.get('page') || 1, limit: query.get('limit') || 10 });
+  });
+  route('POST', '/api/products/:id/reviews', (ctx) => {
+    // Campo trampa «website»: las personas no lo ven ni lo llenan; los programas que llenan todo, sí.
+    if (ctx.body && ctx.body.website) throw new HttpError(400, 'No se pudo enviar la reseña.');
+    takeReviewSlot(ctx.ip);
+    const out = reviews.addReview(db, Number(ctx.params.id), ctx.body);
+    ctx.status = 201;
+    return out;
   });
 
   route('GET', '/api/cart/lookup', ({ query }) => ({
@@ -200,6 +229,8 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, c
     c.status = 201;
     return svc.createOrder(db, c.body, { channel: 'mostrador' });
   });
+  admin('GET', '/api/admin/reviews', ({ query }) => reviews.listRecent(db, { page: query.get('page') || 1, limit: query.get('limit') || 25 }));
+  admin('DELETE', '/api/admin/reviews/:id', ({ params }) => reviews.removeReview(db, Number(params.id)));
   admin('GET', '/api/admin/orders', () => svc.listOrders(db));
   admin('POST', '/api/admin/orders/:id/status', (c) => svc.setOrderStatus(db, Number(c.params.id), c.body.status));
 
@@ -431,7 +462,7 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, c
         const m = r.re.exec(pathname);
         if (!m) continue;
         if (r.admin && !isAuthed(req)) throw new HttpError(401, 'Inicia sesión para continuar');
-        const ctx = { params: m.groups || {}, query: url.searchParams, body: {}, status: 200, headers: req.headers };
+        const ctx = { params: m.groups || {}, query: url.searchParams, body: {}, status: 200, headers: req.headers, ip: clientIp(req) };
         if (req.method !== 'GET') {
           if (r.raw) ctx.raw = await readRaw(req, r.limit);
           else ctx.body = await readBody(req);

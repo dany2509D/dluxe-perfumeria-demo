@@ -1,5 +1,6 @@
 import { api, ApiError, money, esc, icon, bottleSVG, productArt, tileColor, toast, sizeLabel } from './ui.js';
 import { mountThemeSwitch } from './theme.js';
+import { createProductPage, productHref, ratingLine, sizeOptionsHTML, buyState } from './product-page.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const BRAND = window.__BRAND || { name: "D'Luxe Perfumería", short: "D'Luxe", tagline: 'Perfumería', taxName: 'ITBMS', taxRate: 0.07, taxIncluded: true };
@@ -57,8 +58,10 @@ function loadCart() {
     state.cart = [];
   }
 }
+let productPage = null; // la página de un producto (se crea en init)
 function saveCart() {
   try { localStorage.setItem(CART_KEY, JSON.stringify(state.cart)); } catch { /* sin almacenamiento */ }
+  productPage?.refreshBuy(); // el botón de agregar de la página depende de lo que ya hay en la bolsa
 }
 
 // Trae del servidor lo que hay en la bolsa (precios y stock actuales) sin cargar el catálogo.
@@ -190,7 +193,8 @@ function goToPage(n) {
 // ─── Catálogo ──────────────────────────────────────────────────────────────
 const lowStock = (p) => p.total_stock > 0 && p.variants.some((v) => v.stock > 0 && v.stock <= LOW);
 
-function cardHTML(p, i) {
+// opts.href: la tarjeta lleva a esa página (en vez de abrir el recuadro); se usa en los productos recomendados.
+function cardHTML(p, i, opts = {}) {
   const out = p.total_stock === 0;
   const cheapest = p.variants.find((v) => v.price === p.min_price) || p.variants[0];
   // El porcentaje solo se muestra si el precio "desde" realmente tiene descuento; si la oferta es en otro tamaño, dice "Oferta".
@@ -205,17 +209,17 @@ function cardHTML(p, i) {
       ].filter(Boolean).slice(0, 2);
   const was = cheapest?.compare_at ? ` <s class="was">${money(cheapest.compare_at)}</s>` : '';
   return `<article class="card reveal ${out ? 'is-out' : ''}" style="--d:${(i % 4) * 70}ms">
-    <button type="button" class="card-tile" data-open="${p.id}" style="--tile:${tileColor(p.id)}" aria-label="Ver ${esc(p.name)}">
+    <${opts.href ? `a href="${esc(opts.href)}"` : `button type="button" data-open="${p.id}"`} class="card-tile" style="--tile:${tileColor(p.id)}" aria-label="Ver ${esc(p.name)}">
       <span class="card-chips">${chips.join('')}</span>
       ${productArt(p, { title: p.name })}
-    </button>
+    </${opts.href ? 'a' : 'button'}>
     <div class="card-body">
       <p class="caption upper muted">${esc(p.brand || p.category)} · ${esc(p.category)}</p>
       <h3>${esc(p.name)}</h3>
       <p class="card-notes">${esc(p.notes || p.family)}</p>
       <div class="card-foot">
         <span class="card-price">${out ? 'No disponible' : `desde ${money(p.min_price)}${was}`}</span>
-        <button type="button" class="link-arrow" data-open="${p.id}">Ver detalle ${icon('arrowRight', 14)}</button>
+        ${opts.href ? `<a class="link-arrow" href="${esc(opts.href)}">Ver producto ${icon('arrowRight', 14)}</a>` : `<button type="button" class="link-arrow" data-open="${p.id}">Ver detalle ${icon('arrowRight', 14)}</button>`}
       </div>
     </div>
   </article>`;
@@ -531,40 +535,27 @@ async function openProduct(id) {
   $('#pd-name').textContent = product.name;
   $('#pd-desc').textContent = product.description || '';
   $('#pd-notes').textContent = product.notes || '—';
-  $('#pd-sizes').innerHTML = product.variants
-    .map(
-      (v) => `<label class="size-opt ${v.stock === 0 ? 'is-out' : ''}">
-        <input type="radio" name="pd-size" value="${v.id}" ${v.id === first.id ? 'checked' : ''} ${v.stock === 0 ? 'disabled' : ''}>
-        <span class="ml">${sizeLabel(v.size_ml)}</span><span class="pr">${v.stock === 0 ? 'Agotado' : `${money(v.price)}${v.compare_at ? ` <s class="was">${money(v.compare_at)}</s>` : ''}`}</span></label>`
-    )
-    .join('');
+  $('#pd-sizes').innerHTML = sizeOptionsHTML(product, first.id, 'pd-size');
+  $('#pd-rating').innerHTML = product.rating ? ratingLine(product.rating) : '';
+  $('#pd-page').href = productHref(product);
   updateProductPanel();
   if (!dlg.open) dlg.showModal();
 }
 
 function updateProductPanel() {
   const { product, variantId } = state.pd;
-  const v = product.variants.find((x) => x.id === variantId);
-  state.pd.qty = Math.max(1, Math.min(state.pd.qty, v.stock || 1));
-  $('#pd-price').innerHTML = `${money(v.price * state.pd.qty)}${v.compare_at ? ` <s class="was">${money(v.compare_at * state.pd.qty)}</s>` : ''}`;
-  $('#pd-qty').textContent = state.pd.qty;
-  const inCart = state.cart.find((l) => l.variantId === v.id)?.qty || 0;
+  const b = buyState(product, variantId, state.pd.qty, state.cart, LOW);
+  state.pd.qty = b.qty;
+  $('#pd-price').innerHTML = b.price;
+  $('#pd-qty').textContent = b.qty;
   const stock = $('#pd-stock');
-  if (v.stock === 0) {
-    stock.textContent = 'Agotado';
-    stock.className = 'caption upper stock-out';
-  } else if (v.stock <= LOW) {
-    stock.textContent = `Solo quedan ${v.stock} unidades`;
-    stock.className = 'caption upper stock-low';
-  } else {
-    stock.textContent = 'Disponible';
-    stock.className = 'caption upper muted';
-  }
-  $('#pd-minus').disabled = state.pd.qty <= 1;
-  $('#pd-plus').disabled = state.pd.qty + inCart >= v.stock;
+  stock.textContent = b.stock[0];
+  stock.className = b.stock[1];
+  $('#pd-minus').disabled = b.minusDisabled;
+  $('#pd-plus').disabled = b.plusDisabled;
   const add = $('#pd-add');
-  add.disabled = v.stock === 0 || inCart >= v.stock;
-  add.textContent = v.stock === 0 ? 'Agotado' : inCart >= v.stock ? 'Ya tienes todo el stock en tu bolsa' : 'Agregar a la bolsa';
+  add.disabled = b.addDisabled;
+  add.textContent = b.addLabel;
 }
 
 // ─── Bolsa ─────────────────────────────────────────────────────────────────
@@ -868,34 +859,46 @@ function parallax() {
   $('#band-img').style.transform = `translateY(${(p * -9).toFixed(2)}%)`;
 }
 
-// ─── Páginas: los perfumes (portada) y «Quiénes somos» (#nosotros) ──────────
-// «Quiénes somos» es una vista aparte: al entrar se ven los perfumes y esa vista se abre con su botón. Se guarda en la dirección
-// (#nosotros), así que el botón Atrás, recargar y compartir el enlace funcionan; al volver, la portada recupera su lugar.
+// ─── Páginas: los perfumes (portada), «Quiénes somos» (#nosotros) y la página de un producto (#producto/12-nombre) ───
+// Al entrar se ven los perfumes; las otras dos son vistas aparte. Se guardan en la dirección (después del #), así que el botón
+// Atrás, recargar y compartir el enlace funcionan, y al volver la portada recupera el lugar donde estabas.
 const BASE_TITLE = document.title;
 let homeY = 0;
+const parseRoute = () => {
+  const m = /^#producto\/(\d+)/.exec(location.hash);
+  if (m) return { page: 'producto', id: Number(m[1]) };
+  return { page: location.hash === '#nosotros' ? 'nosotros' : 'inicio' };
+};
 function setPage(page) {
   const about = page === 'nosotros' && !!$('#nosotros');
+  const next = about ? 'nosotros' : page === 'producto' ? 'producto' : 'inicio';
   const was = document.body.dataset.page || 'inicio';
-  if (about && was !== 'nosotros') homeY = window.scrollY;
-  document.body.dataset.page = about ? 'nosotros' : 'inicio';
-  document.title = about ? `Quiénes somos · ${BRAND.name}` : BASE_TITLE;
+  if (next !== 'inicio' && was === 'inicio') homeY = window.scrollY;
+  document.body.dataset.page = next;
+  if (next !== 'producto') document.title = about ? `Quiénes somos · ${BRAND.name}` : BASE_TITLE;
   const link = $('#nav-about');
   link?.classList.toggle('is-active', about);
   if (about) link?.setAttribute('aria-current', 'page');
   else link?.removeAttribute('aria-current');
   return was;
 }
-function goHome() {
+// Vuelve a los perfumes. push: deja la entrada en el historial (para que Atrás regrese a la vista de la que se sale); sin push se
+// usa cuando el propio enlace ya va a cambiar la dirección.
+function goHome({ push = true } = {}) {
   setPage('inicio');
-  if (location.hash === '#nosotros') history.replaceState(null, '', location.pathname + location.search);
+  if (push && (location.hash === '#nosotros' || location.hash.startsWith('#producto/'))) history.pushState(null, '', location.pathname + location.search);
 }
 function route({ first = false } = {}) {
-  const was = setPage(location.hash === '#nosotros' ? 'nosotros' : 'inicio');
+  const r = parseRoute();
+  const was = setPage(r.page);
   const now = document.body.dataset.page;
-  if (now === was && !first) return;
+  if (now === was && !first && !(now === 'producto' && r.id !== productPage.id())) return;
   if (now === 'nosotros') {
     window.scrollTo({ top: 0, behavior: 'instant' });
     if (!first) $('#about-title').focus({ preventScroll: true });
+  } else if (now === 'producto') {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    productPage.show(r.id, { focus: !first });
   } else if (!first) {
     const target = location.hash.length > 1 ? document.getElementById(location.hash.slice(1)) : null;
     if (target) target.scrollIntoView();
@@ -908,15 +911,18 @@ function bind() {
   window.addEventListener('hashchange', () => route());
   document.addEventListener('click', (e) => {
     const t = e.target;
-    // Desde «Quiénes somos», lo que lleva al catálogo vuelve antes a los perfumes (esa parte está oculta y no se podría llegar a ella).
-    if (document.body.dataset.page === 'nosotros') {
+    // Desde «Quiénes somos» o desde un producto, lo que lleva al catálogo vuelve antes a los perfumes (esa parte está oculta y no se
+    // podría llegar a ella). Los enlaces con # ya cambian solos la dirección; el resto (botones, el logo) la cambian aquí.
+    if (document.body.dataset.page !== 'inicio') {
       if (t.closest('a.wordmark[href="/"]')) {
         e.preventDefault();
         goHome();
         return void window.scrollTo({ top: 0, behavior: 'instant' });
       }
-      if (t.closest('a[href="#catalogo"], [data-cat], [data-view="sale"], [data-brand], .cat-pill, [data-go], [data-close-go]')) goHome();
+      if (t.closest('a[href="#catalogo"], [data-cat], [data-view="sale"], [data-brand], .cat-pill, [data-go], [data-close-go]')) goHome({ push: !t.closest('a[href^="#"]') });
     }
+    // El enlace del recuadro a la página del producto: se cierra el recuadro y el propio enlace cambia la dirección.
+    if (t.closest('#pd-page')) $('#product-dialog').close();
     // Dentro de un iframe en otra página, el panel no se puede mostrar (por seguridad nunca se incrusta): se abre en una pestaña nueva.
     const adminLink = t.closest('a[href^="/admin"]');
     if (adminLink && window.self !== window.top) {
@@ -1082,6 +1088,17 @@ async function init() {
   $('#pd-plus').innerHTML = icon('plus', 16);
 
   mountThemeSwitch();
+  productPage = createProductPage({
+    root: $('#pp-root'),
+    getCart: () => state.cart,
+    getLow: () => LOW,
+    remember,
+    addToCart,
+    openCart,
+    cardHTML,
+    observeReveals,
+    brandName: BRAND.name,
+  });
   renderAbout();
   route({ first: true });
   const icons = { lista: 'list', grande: 'gridLarge', pequena: 'gridSmall' };

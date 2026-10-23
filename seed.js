@@ -126,12 +126,44 @@ function addProduct(db, ctx, p, sizes) {
   return pid;
 }
 
-const WIPE = ['woo_outbox', 'woo_orders', 'woo_events', 'order_items', 'orders', 'purchase_items', 'purchases', 'stock_movements', 'variants', 'products', 'suppliers'];
+const WIPE = ['reviews', 'woo_outbox', 'woo_orders', 'woo_events', 'order_items', 'orders', 'purchase_items', 'purchases', 'stock_movements', 'variants', 'products', 'suppliers'];
 
 function wipe(db) {
   for (const t of WIPE) db.exec(`DELETE FROM ${t}`);
   // Los ajustes se reinician, salvo la configuración de la conexión con WooCommerce.
   db.exec("DELETE FROM settings WHERE substr(key, 1, 4) <> 'woo_'");
+}
+
+// Reseñas de ejemplo (nombres inventados y comentarios generales, sin datos de personas reales): cada producto recibe de 0 a 4,
+// repartidas en los últimos dos meses. Una de cada cinco fichas queda sin reseñas para que se vea también ese estado.
+const REVIEW_POOL = [
+  ['Valentina R.', 5, 'Me encantó', 'Dura muchas horas y varias personas me han preguntado qué perfume uso. Lo volvería a comprar.'],
+  ['Carlos M.', 4, 'Muy buena relación calidad-precio', 'Buen aroma y buena duración para el precio. Llegó bien presentado y sin ningún problema.'],
+  ['Daniela P.', 5, 'Perfecto para regalar', 'Lo compré de regalo y quedó fascinada. La presentación es muy bonita.'],
+  ['Andrés G.', 4, 'Elegante y discreto', 'No es empalagoso, se siente fino. En la oficina funciona de maravilla.'],
+  ['Mariana L.', 3, 'Está bien', 'Me gusta, pero esperaba que durara un poco más en mi piel. Aun así lo uso seguido.'],
+  ['Luis F.', 5, 'Mi favorito del momento', 'Lo uso casi todos los días. La estela es agradable y no cansa.'],
+  ['Camila S.', 4, 'Bonito aroma', 'Se siente suave y agradable. Lo rocío por la mañana y todavía se nota en la tarde.'],
+  ['Jorge T.', 5, 'Excelente atención', 'Me asesoraron por el chat para elegirlo y acertaron. La entrega fue rápida.'],
+  ['Sofía A.', 4, 'Muy recomendable', 'El frasco es lindo y el aroma gusta. Lo recomiendo para ocasiones especiales.'],
+  ['Ricardo B.', 3, 'Normal', 'Es agradable, aunque no me pareció tan especial. Cumple, pero hay otros que me gustan más.'],
+  ['Paola D.', 5, 'Me sorprendió', 'No lo conocía y me llevé una grata sorpresa. Se nota que es de calidad.'],
+  ['Miguel C.', 4, 'Buen producto', 'Llegó en perfecto estado y el aroma es tal como lo esperaba.'],
+  ['Isabella V.', 5, 'Lo amo', 'Me hace sentir segura. Ya pedí otro para mi hermana.'],
+  ['Gabriel N.', 4, 'Ideal para el día a día', 'Ligero y fácil de usar. Nada pesado ni fuerte.'],
+];
+
+function seedReviews(db) {
+  const r = rng(20261023);
+  const ins = db.prepare("INSERT INTO reviews (product_id, author, rating, title, body, sample, created_at) VALUES (?, ?, ?, ?, ?, 1, datetime('now', 'localtime', ?))");
+  for (const { id } of db.prepare('SELECT id FROM products ORDER BY id').all()) {
+    if (r() < 0.2) continue;
+    const count = 1 + Math.floor(r() * 4);
+    const picks = [...REVIEW_POOL.keys()].sort(() => r() - 0.5).slice(0, count);
+    // De la más antigua a la más reciente, para que el orden de los números coincida con el de las fechas.
+    const days = picks.map(() => 2 + Math.floor(r() * 68)).sort((a, b) => b - a);
+    picks.forEach((k, i) => ins.run(id, ...REVIEW_POOL[k], `-${days[i]} days`));
+  }
 }
 
 function seedCatalog(db, ctx) {
@@ -227,6 +259,7 @@ export function resetAndSeed(db) {
     wipe(db);
     setSetting(db, 'auto_reorder', '0'); // se activa al final, para que el historial no genere compras
     seedCatalog(db, ctx);
+    seedReviews(db);
   });
   seedHistory(db, rand);
 

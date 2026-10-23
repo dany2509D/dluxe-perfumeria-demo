@@ -451,3 +451,26 @@
 
 :root[data-theme='shop'] .nav-about.is-active { background: #000; color: #fff; border-color: #000; }
 :root[data-theme='shop'] body[data-page='nosotros'] .about.forest { padding-top: 24px; }
+
+/* ── Página de un producto (diseño Shop) ─────────────────────────────────── */
+:root[data-theme='shop'] .pp.light { --bg: var(--canvas); --fg-muted: #66625f; --star: #b9780b; --star-off: rgb(0 0 0 / 0.16); padding-top: 20px; }
+:root[data-theme='shop'] .pp-art { border-radius: 28px; }
+:root[data-theme='shop'] .pp-info { background: #fff; border-radius: 28px; padding: clamp(20px, 3vw, 32px); box-shadow: var(--sh-sm); }
+:root[data-theme='shop'] .pp-info .h-lg { font-size: clamp(26px, 3.2vw, 38px); }
+:root[data-theme='shop'] .pp-section { border-top: 0; margin-top: clamp(40px, 5vw, 64px); padding-top: 0; }
+:root[data-theme='shop'] .pp-section > h2 { font-size: clamp(22px, 2.6vw, 30px); margin-bottom: 20px; }
+:root[data-theme='shop'] .pp-details { background: #fff; border-radius: 28px; padding: clamp(20px, 3vw, 32px); box-shadow: var(--sh-sm); }
+:root[data-theme='shop'] .pp-details-text { font-size: 16px; }
+:root[data-theme='shop'] .pp-facts > div, :root[data-theme='shop'] .pp-facts > div:first-child { border-color: rgb(0 0 0 / 0.08); }
+:root[data-theme='shop'] .pp-form { background: #fff; border: 0; border-radius: 28px; box-shadow: var(--sh-sm); }
+:root[data-theme='shop'] .pp-dist-bar { background: rgb(0 0 0 / 0.08); border-radius: 9999px; }
+:root[data-theme='shop'] .pp-review { background: #fff; border: 0; border-radius: 20px; padding: 18px 20px; margin-bottom: 10px; }
+:root[data-theme='shop'] .pp-review:first-child { border-top: 0; }
+:root[data-theme='shop'] .pp-rev-list { margin-top: 28px; }
+:root[data-theme='shop'] .pp-perks { border-color: rgb(0 0 0 / 0.08); }
+:root[data-theme='shop'] .pp-buy { border-color: rgb(0 0 0 / 0.08); }
+:root[data-theme='shop'] .pp-crumbs { text-transform: none; font-size: 13px; letter-spacing: -0.01em; }
+:root[data-theme='shop'] .pp-related.grid[data-layout='pequena'] { --cols: 4; gap: 14px; }
+:root[data-theme='shop'] .pp-skel-art { border-radius: 28px; }
+@media (max-width: 860px) { :root[data-theme='shop'] .pp-related.grid[data-layout='pequena'] { --cols: 3; } }
+@media (max-width: 560px) { :root[data-theme='shop'] .pp-related.grid[data-layout='pequena'] { --cols: 2; gap: 10px; } }

@@ -207,3 +207,7 @@ button.kpi:hover { outline: 1px solid var(--forest); outline-offset: -1px; }
 /* Selector de archivos */
 input[type='file'] { width: 100%; padding: 8px; border: 1px dashed var(--line-strong); background: transparent; font-size: 15px; }
 input[type='file']::file-selector-button { margin-right: 12px; padding: 8px 14px; border: 1px solid var(--fg); border-radius: var(--radius); background: var(--fg); color: var(--bg); font: inherit; font-weight: 500; cursor: pointer; }
+
+/* Reseñas: el texto largo se corta con gracia y el panel queda legible */
+.rev-text { max-width: 46ch; overflow-wrap: anywhere; }
+.rev-intro { margin: 0 0 14px; }

@@ -15,6 +15,7 @@ const state = {
   inv: { q: '', filter: 'todos', page: 1, data: null },
   prod: { q: '', category: '', status: '', page: 1, data: null },
   movType: '',
+  rev: { page: 1 },
   woo: { file: null, fileName: '', report: null, preview: null, done: null, updateStock: null },
   chartTable: false,
   pos: { q: '', lines: [], results: [], total: 0, pay: 'efectivo', customer: '' }, // cada línea: { id, qty, v } con una copia de la variante
@@ -28,6 +29,7 @@ const NAV = [
   ['productos', 'Productos', 'package'],
   ['compras', 'Compras', 'truck'],
   ['pedidos', 'Pedidos', 'receipt'],
+  ['resenas', 'Reseñas', 'star'],
   ['movimientos', 'Movimientos', 'history'],
   ['woocommerce', 'WooCommerce', 'link'],
 ];
@@ -851,6 +853,28 @@ async function renderOrders() {
   return { html };
 }
 
+// ═══ RESEÑAS ═══════════════════════════════════════════════════════════════
+// Moderación: cualquiera puede escribir una reseña en la página de un producto; aquí se eliminan las que no deban mostrarse.
+async function renderReviewsAdmin() {
+  const d = await api(`/api/admin/reviews?page=${state.rev.page}&limit=25`);
+  state.rev.page = d.page;
+  const rows = d.reviews
+    .map(
+      (r) => `<tr><td class="nowrap">${fmtDateTime(r.created_at)}</td>
+        <td><span class="name">${esc(r.product_name)}</span><span class="sub-line">${esc(r.product_brand)}</span></td>
+        <td class="nowrap"><b>${r.rating}</b>/5</td>
+        <td class="rev-text">${r.title ? `<b>${esc(r.title)}</b><br>` : ''}${esc(r.body)}</td>
+        <td>${esc(r.author)}${r.sample ? ' <span class="badge">Ejemplo</span>' : ''}</td>
+        <td><div class="acts"><button type="button" class="btn btn-sm btn-outline" data-act="del-review" data-id="${r.id}" data-author="${esc(r.author)}">Eliminar</button></div></td></tr>`
+    )
+    .join('');
+  const html = `<section class="panel light">
+    <p class="muted rev-intro">${num(d.total)} ${d.total === 1 ? 'reseña' : 'reseñas'}${d.total ? ` · promedio ${String(d.avg.toFixed(1)).replace('.', ',')} de 5` : ''}. Las más recientes primero; las de ejemplo de la demostración llevan la marca «Ejemplo».</p>
+    ${d.total ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Producto</th><th>Calificación</th><th>Reseña</th><th>Autor</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>${pagerHTML(d, 'pg-rev')}` : '<p class="sub">Todavía no hay reseñas.</p>'}
+  </section>`;
+  return { html };
+}
+
 // ═══ MOVIMIENTOS ═══════════════════════════════════════════════════════════
 async function renderMovements() {
   const moves = await api(`/api/admin/movements?limit=200&type=${state.movType}`);
@@ -1016,6 +1040,7 @@ const VIEWS = {
   productos: { title: 'Productos', kicker: 'Catálogo', render: renderProducts },
   compras: { title: 'Compras', kicker: 'Reposición con proveedores', render: renderPurchases },
   pedidos: { title: 'Pedidos', kicker: 'Online y mostrador', render: renderOrders },
+  resenas: { title: 'Reseñas', kicker: 'Lo que dicen los clientes', render: renderReviewsAdmin },
   movimientos: { title: 'Movimientos', kicker: 'Libro de entradas y salidas', render: renderMovements },
   woocommerce: { title: 'WooCommerce', kicker: 'Conexión con tu tienda actual', render: renderWoo },
 };
@@ -1047,6 +1072,13 @@ const ACTIONS = {
     show(state.view, { silent: true });
   }),
   'pg-inv': (el) => { state.inv.page = Number(el.dataset.page); reloadInv(); },
+  'pg-rev': (el) => { state.rev.page = Number(el.dataset.page); show('resenas', { silent: true }); },
+  'del-review': (el) => attempt(async () => {
+    if (!confirm(`¿Eliminar la reseña de ${el.dataset.author}? Dejará de mostrarse en la tienda.`)) return;
+    await api(`/api/admin/reviews/${el.dataset.id}`, { method: 'DELETE' });
+    toast('Reseña eliminada.');
+    show('resenas', { silent: true });
+  }),
   'pg-prod': (el) => { state.prod.page = Number(el.dataset.page); reloadProducts(); },
   'add-vrow': () => $('#vrows').insertAdjacentHTML('beforeend', vrowHTML()),
   'add-prow': () => $('#vrows').insertAdjacentHTML('beforeend', purchaseRowHTML()),

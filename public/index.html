@@ -166,6 +166,11 @@
         <p class="caption muted about-note" id="about-note" hidden></p>
       </div>
     </section>
+
+    <!-- Página de un producto (#producto/12-nombre): la arma js/product-page.js -->
+    <section class="pp light" id="producto" aria-label="Producto">
+      <div class="wrap pp-wrap" id="pp-root"></div>
+    </section>
   </main>
 
   <footer class="footer dark">
@@ -210,8 +215,10 @@
       <div class="pd-info">
         <p class="caption upper muted" id="pd-meta"></p>
         <h2 class="h-lg" id="pd-name"></h2>
+        <p class="pd-rating" id="pd-rating"></p>
         <p class="body-lg pd-desc" id="pd-desc"></p>
         <p class="pd-notes"><span class="label">Notas</span><span id="pd-notes"></span></p>
+        <a class="btn btn-outline btn-sm pd-page" id="pd-page" href="#producto/0" title="Detalles, reseñas y más perfumes">Ver página completa del producto <span aria-hidden="true">→</span></a>
 
         <fieldset class="sizes">
           <legend class="label">Tamaño</legend>

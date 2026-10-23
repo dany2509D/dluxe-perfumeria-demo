@@ -63,7 +63,15 @@ dirección de contacto se dejan vacíos a propósito (la demo no debe mandar cli
 con relevancia; filtros por marca, familia olfativa, precio, ofertas, novedades y disponibilidad con **conteos por filtro**; orden
 (recomendados, novedades, precio, mayor descuento); precio tachado y % de descuento; directorio de marcas; **paginación de 25 productos por página**; los
 filtros y la página viven en la dirección (se pueden compartir como enlace); bolsa que se recupera entre visitas; envíos y pagos, contacto y
-nosotros. Todo se filtra y pagina **en el servidor**: con 8.500 productos la portada responde en milisegundos.
+quiénes somos. Todo se filtra y pagina **en el servidor**: con 8.500 productos la portada responde en milisegundos.
+
+**Página de producto** (`/#producto/12-nombre`): al tocar un perfume se abre el recuadro de siempre (con su botón de agregar) y un enlace lleva
+a la página completa: foto grande, tamaños, precio, cantidad y **Agregar a la bolsa**; detalles (marca, familia olfativa, notas, tamaños);
+**productos recomendados** (misma marca, familia, categoría y tipo; primero los que hay en existencia) y **reseñas** (promedio, reparto por
+estrellas, lista paginada y formulario para escribir la suya). Se puede abrir directo por la dirección, compartir y volver con Atrás. Las
+reseñas llevan antispam (sin enlaces, campo trampa, tope por visitante: `REVIEW_RATE_PER_HOUR`) y el HTML que alguien escriba se muestra siempre
+como texto. En el panel, la sección **Reseñas** las lista y permite eliminar las que no deban mostrarse; «Reiniciar demo» las devuelve a las
+de ejemplo (nombres inventados y comentarios generales).
 
 **Panel** (`/admin`)
 - **Resumen**: ventas, margen, valor del inventario, alertas, gráfico de 14 días, más vendidos, canales.
@@ -189,6 +197,7 @@ $env:ANTHROPIC_API_KEY = "tu-clave"; npm start
 | `CHATBOT_FALLBACK` | `off` desactiva la reserva ante rechazos del modelo (solo Opus y Sonnet) | activa |
 | `CHAT_RATE_PER_10MIN` | Mensajes por visitante cada 10 minutos | 60 local · 15 IA |
 | `CHAT_DAILY_LIMIT` | Mensajes totales por día | 5000 local · 200 IA |
+| `REVIEW_RATE_PER_HOUR` | Reseñas que puede publicar un visitante por hora | 5 |
 | `WOO_URL` · `WOO_KEY` · `WOO_SECRET` | Conexión con la API de WooCommerce | — |
 | `WOO_WEBHOOK_SECRET` | Secreto para firmar los avisos entrantes | — |
 | `WOO_PUSH_STOCK` | `1`: este sistema manda en el stock y lo envía a WooCommerce | desactivado |
@@ -217,8 +226,9 @@ Quien ya eligió un diseño en su navegador conserva su elección.
 
 ```
 server.js · app.js     servidor HTTP y rutas de la API (sin frameworks)
-db.js                  esquema SQLite (v2, con migración), triggers (la automatización) y bandeja de salida
-catalog.js             catálogo a escala: filtros, búsqueda con relevancia, conteos, paginación (todo en SQL)
+db.js                  esquema SQLite (v3, con migración), triggers (la automatización) y bandeja de salida
+catalog.js             catálogo a escala: filtros, búsqueda con relevancia, conteos, paginación y recomendados (todo en SQL)
+reviews.js             reseñas de productos: validación, antispam, resumen y moderación
 service.js             reglas de negocio (inventario, pedidos, compras, productos)
 brand.js · brand.json  identidad configurable de la tienda
 woo-import.js          CSV/REST de WooCommerce → plan, informe de calidad e importación
@@ -226,7 +236,7 @@ woo-sync.js            cliente REST, bandeja de salida de stock, webhook firmado
 seed.js · photos.js    27 productos de ejemplo, el generador de 8.500 y el reparto de fotos
 netlify/ · scripts/    función de Netlify (API + estado compartido) y armado del sitio estático
 netlify.toml           configuración del despliegue en Netlify
-public/                tienda (index.html), panel (admin.html), chat embebible (embed.html, embed.js), css/ y js/
+public/                tienda (index.html; la página de producto es js/product-page.js), panel (admin.html), chat embebible (embed.html, embed.js), css/ y js/
 public/img/            fotos libres de derechos (ver CREDITS.md)
 public/samples/        CSV de ejemplo en formato WooCommerce
 chatbot.js · chatbot-local.js · chat-env.js  el asistente (modo IA y modo local)

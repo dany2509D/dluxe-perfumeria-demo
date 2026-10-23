@@ -229,7 +229,7 @@ describe('migración desde el esquema anterior', () => {
       old.close();
 
       const db = openDb(path);
-      assert.equal(db.prepare('PRAGMA user_version').get().user_version, 2);
+      assert.equal(db.prepare('PRAGMA user_version').get().user_version, 3);
       assert.deepEqual(db.prepare('SELECT id, category FROM products ORDER BY id').all().map((r) => `${r.id}:${r.category}`), ['1:Damas', '2:Caballeros']);
       assert.equal(db.prepare('SELECT SUM(stock) n FROM variants').get().n, 11);
       assert.equal(db.prepare('SELECT sold FROM products WHERE id = 1').get().sold, 2);

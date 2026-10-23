@@ -232,6 +232,19 @@ CREATE TABLE IF NOT EXISTS woo_orders (
   created_at   TEXT NOT NULL DEFAULT (${LOCAL_NOW})
 );
 
+-- Reseñas de los clientes en la página de cada producto. sample = 1: reseña de ejemplo de la demostración.
+CREATE TABLE IF NOT EXISTS reviews (
+  id         INTEGER PRIMARY KEY,
+  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  author     TEXT NOT NULL,
+  rating     INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  title      TEXT NOT NULL DEFAULT '',
+  body       TEXT NOT NULL,
+  sample     INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (${LOCAL_NOW})
+);
+CREATE INDEX IF NOT EXISTS idx_reviews_product ON reviews (product_id, created_at DESC, id DESC);
+
 CREATE TRIGGER IF NOT EXISTS trg_woo_outbox
 AFTER UPDATE OF stock ON variants
 WHEN NEW.external_id IS NOT NULL AND NEW.stock <> OLD.stock
@@ -243,7 +256,7 @@ BEGIN
 END;
 `;
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 // Convierte una base creada con versiones anteriores sin perder datos: categorías Mujer/Hombre → Damas/Caballeros,
 // columnas nuevas (tipo, ofertas, contador de vendidos, texto de búsqueda…).
