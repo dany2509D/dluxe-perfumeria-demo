@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { createApp } from '../app.js';
 import { buildChat } from '../chat-env.js';
 import { ancestors } from '../frames.js';
-import { createDemoState } from '../netlify/lib/demo-state.mjs';
+import { createDemoState, perCallStore } from '../netlify/lib/demo-state.mjs';
 import { demoState, config } from '../netlify/functions/api.mjs';
 
 const tmp = mkdtempSync(join(tmpdir(), 'dluxe-deploy-'));
@@ -31,6 +31,44 @@ const call = (inst, path, { method = 'GET', body, token, headers = {} } = {}) =>
     body: body ? JSON.stringify(body) : undefined,
   }));
 const json = async (res) => res.json();
+
+describe('permiso de Netlify Blobs que caduca', () => {
+  // Cada almacén sirve solo durante su invocación (como el permiso real): usarlo después falla con «Token expired».
+  const expiringBlobs = () => {
+    const data = new Map();
+    let invocation = 0;
+    const open = () => {
+      const mine = invocation;
+      const live = () => { if (mine !== invocation) throw new Error('Netlify Blobs has generated an internal error (Failed to decode token: Token expired)'); };
+      return { get: async (k) => { live(); return data.has(k) ? data.get(k) : null; }, set: async (k, v) => { live(); data.set(k, v); } };
+    };
+    return { open, nextInvocation: () => { invocation++; } };
+  };
+  test('un almacén creado una sola vez deja de servir cuando termina la invocación; perCallStore lo pide en cada operación', async () => {
+    const blobs = expiringBlobs();
+    const fixed = blobs.open();
+    const fresh = perCallStore(blobs.open);
+    await fixed.set('x', 1);
+    await fresh.set('x', 1);
+    blobs.nextInvocation();
+    await assert.rejects(fixed.get('x'), /Token expired/, 'así era antes: la instancia caliente se quedaba con el permiso vencido');
+    assert.equal(await fresh.get('x'), 1);
+  });
+  test('una instancia que sigue viva atiende peticiones de varias invocaciones seguidas', async () => {
+    const blobs = expiringBlobs();
+    const a = instance(perCallStore(blobs.open));
+    try {
+      for (let i = 0; i < 4; i++) {
+        blobs.nextInvocation();
+        const res = await call(a, '/api/products?limit=3');
+        assert.equal(res.status, 200, `invocación ${i + 1}`);
+        assert.equal((await json(res)).products.length, 3);
+      }
+    } finally {
+      await a.close();
+    }
+  });
+});
 
 describe('estado compartido entre instancias de la función', () => {
   test('la primera instancia siembra la base y sube la copia inicial; las lecturas no vuelven a subir nada', async () => {

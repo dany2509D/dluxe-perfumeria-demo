@@ -5,11 +5,11 @@ import { getStore } from '@netlify/blobs';
 import brandFile from '../../brand.json' with { type: 'json' };
 import { resolveBrand } from '../../brand.js';
 import { buildChat } from '../../chat-env.js';
-import { createDemoState } from '../lib/demo-state.mjs';
+import { createDemoState, perCallStore } from '../lib/demo-state.mjs';
 
 let state = null;
 
-export function demoState(store = getStore({ name: 'dluxe-demo', consistency: 'strong' }), env = process.env) {
+export function demoState(store = perCallStore(() => getStore({ name: 'dluxe-demo', consistency: 'strong' })), env = process.env) {
   const brand = resolveBrand(brandFile, env);
   return createDemoState({
     store,

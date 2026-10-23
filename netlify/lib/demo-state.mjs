@@ -17,6 +17,14 @@ const HOP_BY_HOP = ['connection', 'keep-alive', 'transfer-encoding', 'upgrade', 
 const toArrayBuffer = (buf) => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
 const rmDb = (file) => { for (const ext of ['', '-wal', '-shm']) rmSync(file + ext, { force: true }); };
 
+// Netlify entrega el permiso para usar Blobs con cada invocación y ese permiso caduca a los pocos minutos («Token expired»): una
+// instancia que sigue «caliente» no puede reutilizar un almacén creado en una invocación anterior (la API respondía 503 a ratos).
+// perCallStore pide el almacén de nuevo en cada operación, con el permiso vigente. open: () => almacén de Netlify Blobs.
+export const perCallStore = (open) => ({
+  get: (key, opts) => open().get(key, opts),
+  set: (key, value) => open().set(key, value),
+});
+
 // store: { get(key, opts), set(key, value) } (Netlify Blobs o un doble en las pruebas). createOptions: opciones de createApp.
 export function createDemoState({ store, createOptions = {}, dir = join(tmpdir(), 'dluxe-demo'), retireAfterMs = 60_000 }) {
   mkdirSync(dir, { recursive: true });
