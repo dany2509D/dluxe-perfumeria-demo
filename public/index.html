@@ -117,7 +117,14 @@
           </div>
         </div>
 
-        <p class="result-count caption upper muted" id="result-count" aria-live="polite"></p>
+        <div class="result-bar">
+          <p class="result-count caption upper muted" id="result-count" aria-live="polite"></p>
+          <div class="view-switch" role="group" aria-label="Cómo ver los productos" id="view-switch">
+            <button type="button" class="view-btn" data-mode="lista" aria-pressed="false" aria-label="Lista" title="Lista"></button>
+            <button type="button" class="view-btn" data-mode="grande" aria-pressed="false" aria-label="Cuadrícula grande" title="Cuadrícula grande"></button>
+            <button type="button" class="view-btn" data-mode="pequena" aria-pressed="false" aria-label="Cuadrícula pequeña" title="Cuadrícula pequeña"></button>
+          </div>
+        </div>
         <div class="grid" id="grid"></div>
         <nav class="pager" id="pager" aria-label="Paginación del catálogo" hidden></nav>
       </div>
@@ -187,6 +194,7 @@
           <div class="size-list" id="pd-sizes"></div>
         </fieldset>
 
+        <div class="pd-cta">
         <div class="pd-buy">
           <div>
             <p class="pd-price h" id="pd-price"></p>
@@ -199,6 +207,7 @@
           </div>
         </div>
         <button type="button" class="btn btn-lemon btn-block" id="pd-add">Agregar a la bolsa</button>
+        </div>
       </div>
     </div>
   </dialog>

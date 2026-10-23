@@ -88,6 +88,8 @@ const PATHS = {
   sparkle: '<path d="M12 3l1.9 6.1L20 11l-6.1 1.9L12 19l-1.9-6.1L4 11l6.1-1.9z"/>',
   arrowRight: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
   chevronUp: '<path d="m18 15-6-6-6 6"/>',
+  gridLarge: '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+  gridSmall: '<rect width="4" height="4" x="3" y="3" rx=".6"/><rect width="4" height="4" x="10" y="3" rx=".6"/><rect width="4" height="4" x="17" y="3" rx=".6"/><rect width="4" height="4" x="3" y="10" rx=".6"/><rect width="4" height="4" x="10" y="10" rx=".6"/><rect width="4" height="4" x="17" y="10" rx=".6"/><rect width="4" height="4" x="3" y="17" rx=".6"/><rect width="4" height="4" x="10" y="17" rx=".6"/><rect width="4" height="4" x="17" y="17" rx=".6"/>',
   link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
   menu: '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>',
 };

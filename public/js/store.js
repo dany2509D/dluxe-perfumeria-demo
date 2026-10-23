@@ -10,10 +10,23 @@ const CATEGORIES = ['Damas', 'Caballeros', 'Infantil', 'Unisex'];
 const KINDS = [['Perfume', 'Perfumes'], ['Estuche', 'Estuches'], ['Tester', 'Testers']];
 const PRICE_STEPS = [25, 50, 75, 100, 150, 250];
 const FAMILY_COLORS = { Floral: '#f0a6b4', Oriental: '#7b3f4f', Amaderado: '#9a6b43', Fresco: '#8fc7d6', Cítrico: '#f2c14e', Gourmand: '#e3b778', Frutal: '#8c1d3c', Aromático: '#a58fc4' };
+// Cómo se ven los productos: lista, cuadrícula grande o pequeña. Se recuerda en este navegador; sin elección previa,
+// el celular arranca con la cuadrícula pequeña (dos columnas) y el resto con la grande.
+const LAYOUT_KEY = 'aurelia-layout-v1';
+const LAYOUTS = ['lista', 'grande', 'pequena'];
+const defaultLayout = () => (matchMedia('(max-width: 560px)').matches ? 'pequena' : 'grande');
+function loadLayout() {
+  try {
+    const v = localStorage.getItem(LAYOUT_KEY);
+    if (LAYOUTS.includes(v)) return v;
+  } catch { /* sin almacenamiento */ }
+  return defaultLayout();
+}
 const EMPTY = { q: '', category: '', kind: '', brand: '', family: '', maxPrice: '', onSale: false, isNew: false, inStock: false, sort: '', page: '' };
 
 const state = {
   filters: { ...EMPTY },
+  layout: 'grande',
   list: [], // productos mostrados (se acumulan al cargar más)
   total: 0, page: 0, pages: 0, loading: false, error: '', fetchedAt: 0,
   facets: null, // conteos por filtro, para la selección actual
@@ -209,6 +222,16 @@ function cardHTML(p, i) {
 }
 
 const skeletonCard = () => '<article class="card skel" aria-hidden="true"><div class="card-tile"></div><div class="card-body"><i></i><i></i><i class="short"></i></div></article>';
+
+function setLayout(mode, { save = true } = {}) {
+  if (!LAYOUTS.includes(mode)) return;
+  state.layout = mode;
+  $('#grid').dataset.layout = mode;
+  document.querySelectorAll('#view-switch .view-btn').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+  if (save) {
+    try { localStorage.setItem(LAYOUT_KEY, mode); } catch { /* sin almacenamiento */ }
+  }
+}
 
 function renderGrid() {
   const grid = $('#grid');
@@ -860,6 +883,8 @@ function bind() {
       applyFilters({ brand: brand.dataset.brand });
       return $('#catalogo').scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth' });
     }
+    const mode = t.closest('#view-switch [data-mode]');
+    if (mode) return setLayout(mode.dataset.mode);
     if (t.closest('.js-clear')) {
       $('#q').value = '';
       $('#q-hero').value = '';
@@ -987,6 +1012,9 @@ async function init() {
   $('#pd-plus').innerHTML = icon('plus', 16);
 
   mountThemeSwitch();
+  const icons = { lista: 'list', grande: 'gridLarge', pequena: 'gridSmall' };
+  document.querySelectorAll('#view-switch .view-btn').forEach((b) => { b.innerHTML = icon(icons[b.dataset.mode], 20); });
+  setLayout(loadLayout(), { save: false });
   loadCart();
   state.filters = filtersFromUrl();
   $('#q').value = state.filters.q;
