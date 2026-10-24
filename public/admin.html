@@ -24,6 +24,10 @@
       <p class="wordmark">{{BRAND_SHORT}}</p>
       <h1 class="h" id="login-title">Panel de administración</h1>
       <label class="field">
+        <span>Usuario</span>
+        <input type="text" id="login-user" autocomplete="username" value="admin" required maxlength="40" autocapitalize="none" spellcheck="false">
+      </label>
+      <label class="field">
         <span>Contraseña</span>
         <input type="password" id="login-pw" autocomplete="current-password" required autofocus>
       </label>
@@ -40,10 +44,13 @@
       <div class="side-brand">
         <p class="wordmark" data-initial="{{BRAND_INITIAL}}">{{BRAND_SHORT}}</p>
         <p class="caption upper muted">Panel de control</p>
+        <p class="side-user" id="side-user"></p>
       </div>
       <nav class="side-nav" id="side-nav"></nav>
       <div class="side-foot">
         <a class="side-link" href="/" target="_blank" rel="noopener" id="link-store"></a>
+        <button type="button" class="side-link" id="btn-account"></button>
+        <button type="button" class="side-link" id="btn-policy"></button>
         <button type="button" class="side-link" id="btn-seed"></button>
         <button type="button" class="side-link" id="btn-reset"></button>
         <button type="button" class="side-link" id="btn-logout"></button>

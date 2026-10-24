@@ -30,7 +30,7 @@ describe('esquema', () => {
       first.close();
       const db = openDb(path);
       assert.equal(db.prepare('PRAGMA user_version').get().user_version, SCHEMA_VERSION);
-      assert.equal(SCHEMA_VERSION, 3);
+      assert.equal(SCHEMA_VERSION, 4);
       assert.equal(db.prepare('SELECT COUNT(*) n FROM reviews').get().n, 0);
       assert.equal(db.prepare('SELECT COUNT(*) n FROM products').get().n, products);
       db.close();

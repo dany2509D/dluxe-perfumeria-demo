@@ -17,6 +17,8 @@ export function demoState(store = perCallStore(() => getStore({ name: 'dluxe-dem
       password: env.ADMIN_PASSWORD || 'admin123', // en el panel de Netlify: Site configuration → Environment variables → ADMIN_PASSWORD
       brand,
       trustProxy: true, // detrás de Netlify: la IP del visitante viene en x-nf-client-connection-ip
+      demoUsers: env.DEMO_USERS !== '0', // gerente, cajero y bodega de ejemplo (DEMO_USERS=0 los desactiva)
+      publicUrl: env.PUBLIC_URL || env.URL || '', // la dirección del sitio, para los enlaces de los avisos
       chatFactory: (db) => buildChat(db, env, brand),
       embedOrigins: env.EMBED_ORIGINS || '',
       frameOrigins: env.FRAME_ORIGINS || '',

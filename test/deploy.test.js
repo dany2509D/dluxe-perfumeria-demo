@@ -154,10 +154,12 @@ describe('estado compartido entre instancias de la función', () => {
       const total = async (inst) => (await json(await call(inst, '/api/admin/orders', { token }))).length;
       await call(b, '/api/products');
       const before = await total(b);
+      const versions = () => store.sets.filter((k) => k === 'version').length;
+      const antes = versions();
       assert.equal((await call(a, '/api/admin/reset', { method: 'POST', token, body: {} })).status, 200);
       const after = await total(b);
       assert.ok(after <= before && after > 0, 'la copia nueva llega a la otra instancia');
-      assert.equal(store.sets.filter((k) => k === 'version').length, 2);
+      assert.equal(versions(), antes + 1, 'el reinicio subió una sola versión nueva');
     } finally {
       await a.close();
       await b.close();
@@ -219,14 +221,15 @@ describe('sesiones firmadas y proxy en la app', () => {
     return { app, base, login, dash };
   };
 
-  test('el mismo token vale en otra instancia con la misma contraseña, y en ninguna con otra', async () => {
-    const [x, y, z] = await Promise.all([start({ password: 'uno' }), start({ password: 'uno' }), start({ password: 'dos' })]);
+  test('el mismo token vale en otra instancia que comparte la base de datos, y en ninguna que tenga otra', async () => {
+    const file = join(tmp, 'compartida.db');
+    const [x, y, z] = await Promise.all([start({ dbPath: file, password: 'uno' }), start({ dbPath: file, password: 'uno' }), start({ password: 'dos' })]);
     try {
       const { token } = await x.login('uno');
-      assert.equal(await y.dash(token), 200);
-      assert.equal(await z.dash(token), 401, 'otra contraseña, otra clave de firma');
+      assert.equal(await y.dash(token), 200, 'misma base de datos: la sesión vale');
+      assert.equal(await z.dash(token), 401, 'otra clave de firma y otra base de datos');
     } finally {
-      for (const s of [x, y, z]) s.app.server.close();
+      for (const s of [x, y, z]) { s.app.server.close(); s.app.db.close(); }
     }
   });
   test('un token alterado, vencido o inventado se rechaza', async () => {
@@ -234,11 +237,14 @@ describe('sesiones firmadas y proxy en la app', () => {
     const realNow = Date.now;
     try {
       const { token } = await x.login('uno');
-      const [exp, sig] = token.split('_');
-      assert.equal(await x.dash(`${exp}_${sig.replace(/.$/, sig.endsWith('0') ? '1' : '0')}`), 401, 'firma alterada');
-      assert.equal(await x.dash(`${(parseInt(exp, 36) + 3_600_000).toString(36)}_${sig}`), 401, 'vencimiento alargado a mano');
+      const [kind, id, exp, sig] = token.split('.');
+      assert.equal(kind, 's');
+      assert.equal(await x.dash([kind, id, exp, sig.replace(/.$/, sig.endsWith('0') ? '1' : '0')].join('.')), 401, 'firma alterada');
+      assert.equal(await x.dash([kind, id, (parseInt(exp, 36) + 3_600_000).toString(36), sig].join('.')), 401, 'vencimiento alargado a mano');
+      assert.equal(await x.dash([kind, '2', exp, sig].join('.')), 401, 'la firma de un usuario no sirve para otro');
+      assert.equal(await x.dash(['c', id, exp, sig].join('.')), 401, 'un token de cliente no abre el panel');
       assert.equal(await x.dash('abc'), 401);
-      assert.equal(await x.dash(`${'0'.repeat(3)}_${'0'.repeat(64)}`), 401);
+      assert.equal(await x.dash(`s.1.${'0'.repeat(3)}.${'0'.repeat(64)}`), 401);
       Date.now = () => realNow() + 13 * 3600e3; // pasan 13 horas
       assert.equal(await x.dash(token), 401, 'vencida');
     } finally {

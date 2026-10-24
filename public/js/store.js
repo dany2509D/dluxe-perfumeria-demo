@@ -1,6 +1,7 @@
 import { api, ApiError, money, esc, icon, bottleSVG, productArt, tileColor, toast, sizeLabel } from './ui.js';
 import { mountThemeSwitch } from './theme.js';
-import { createProductPage, productHref, ratingLine, sizeOptionsHTML, buyState } from './product-page.js';
+import { createProductPage, productHref, ratingLine, sizeOptionsHTML, buyState, bundleHTML } from './product-page.js';
+import * as acct from './account.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const BRAND = window.__BRAND || { name: "D'Luxe Perfumería", short: "D'Luxe", tagline: 'Perfumería', taxName: 'ITBMS', taxRate: 0.07, taxIncluded: true };
@@ -38,6 +39,7 @@ const state = {
   cart: [], // [{ variantId, qty }]
   pd: null, // producto abierto: { product, variantId, qty }
   checkout: { delivery: 'retiro', payment: 'tarjeta', error: '', busy: false },
+  promo: { coupon: '', gift: '', quote: null, error: '' }, // cupón, tarjeta de regalo y el precio que calcula el servidor
   brands: null,
 };
 
@@ -213,6 +215,7 @@ function cardHTML(p, i, opts = {}) {
       <span class="card-chips">${chips.join('')}</span>
       ${productArt(p, { title: p.name })}
     </${opts.href ? 'a' : 'button'}>
+    <button type="button" class="fav-btn" data-fav="${p.id}" aria-pressed="false" aria-label="Guardar ${esc(p.name)} en favoritos">${icon('heart', 18)}</button>
     <div class="card-body">
       <p class="caption upper muted">${esc(p.brand || p.category)} · ${esc(p.category)}</p>
       <h3>${esc(p.name)}</h3>
@@ -538,7 +541,13 @@ async function openProduct(id) {
   $('#pd-sizes').innerHTML = sizeOptionsHTML(product, first.id, 'pd-size');
   $('#pd-rating').innerHTML = product.rating ? ratingLine(product.rating) : '';
   $('#pd-page').href = productHref(product);
+  $('#pd-fav').dataset.fav = product.id;
+  $('#pd-fav').innerHTML = `${icon('heart', 18)}<span>Guardar en favoritos</span>`;
+  const bundle = $('#pd-bundle');
+  bundle.hidden = !product.bundle;
+  bundle.innerHTML = product.bundle ? bundleHTML(product.bundle) : '';
   updateProductPanel();
+  window.dispatchEvent(new Event('aurelia:fav-refresh'));
   if (!dlg.open) dlg.showModal();
 }
 
@@ -556,6 +565,7 @@ function updateProductPanel() {
   const add = $('#pd-add');
   add.disabled = b.addDisabled;
   add.textContent = b.addLabel;
+  window.dispatchEvent(new CustomEvent('aurelia:product-state', { detail: { product, variantId, root: $('#product-dialog') } }));
 }
 
 // ─── Bolsa ─────────────────────────────────────────────────────────────────
@@ -567,6 +577,37 @@ const cartLines = () =>
     })
     .filter(Boolean);
 const cartTotal = () => cartLines().reduce((s, l) => s + l.variant.price * l.qty, 0);
+const round2 = (n) => Math.round(n * 100) / 100;
+// El precio vigente de la bolsa: el que calculó el servidor si todavía corresponde a lo que hay en ella; si no, la suma simple.
+const quoteNow = () => {
+  const q = state.promo.quote;
+  return q && Math.abs(q.subtotal - round2(cartTotal())) < 0.005 ? q : null;
+};
+const payable = () => quoteNow()?.due ?? round2(cartTotal());
+const discountNow = () => quoteNow()?.discount || 0;
+
+let quoteSeq = 0;
+async function refreshQuote() {
+  const seq = ++quoteSeq;
+  if (!state.cart.length) { state.promo.quote = null; state.promo.error = ''; return; }
+  const items = state.cart.map((l) => ({ variant_id: l.variantId, qty: l.qty }));
+  const email = acct.getCustomer()?.email || '';
+  let q = null;
+  let error = '';
+  try {
+    q = await api('/api/cart/quote', { method: 'POST', body: { items, coupon: state.promo.coupon, gift_code: state.promo.gift, email }, token: null });
+  } catch (e) {
+    error = e instanceof ApiError ? e.message : 'No se pudo calcular el precio.';
+    try { q = await api('/api/cart/quote', { method: 'POST', body: { items, email }, token: null }); } catch { q = null; }
+  }
+  if (seq !== quoteSeq) return;
+  state.promo.quote = q;
+  state.promo.error = error;
+  if ($('#cart-dialog').open) renderCart();
+  if ($('#checkout-dialog').open && $('#co-form')) renderCheckoutSummary();
+}
+const promoLines = (q, { gift = true } = {}) => (q && q.discount > 0 ? `<div class="sum-row disc"><span class="caption upper">${esc(q.applied?.name || 'Descuento')}</span><strong>−${money(q.discount)}</strong></div>` : '')
+  + (gift && q?.gift ? `<div class="sum-row"><span class="caption upper muted">Tarjeta de regalo</span><strong>−${money(q.gift.applied)}</strong></div>` : '');
 const cartCount = () => state.cart.reduce((s, l) => s + l.qty, 0);
 
 // Los precios ya incluyen el impuesto (configurable en brand.json): se muestra cuánto es.
@@ -589,6 +630,7 @@ async function addToCart(variantId, qty) {
   else state.cart.push({ variantId, qty: next });
   saveCart();
   renderCartBadge(true);
+  refreshQuote();
 }
 
 function setQty(variantId, qty) {
@@ -599,6 +641,7 @@ function setQty(variantId, qty) {
   saveCart();
   renderCartBadge();
   renderCart();
+  refreshQuote();
 }
 
 function removeLine(variantId) {
@@ -606,6 +649,7 @@ function removeLine(variantId) {
   saveCart();
   renderCartBadge();
   renderCart();
+  refreshQuote();
 }
 
 function renderCartBadge(bump = false) {
@@ -656,15 +700,24 @@ function renderCart() {
     return;
   }
   body.innerHTML = lines.map((l) => lineHTML(l, { editable: true })).join('');
-  const tax = taxText(cartTotal());
+  const q = quoteNow();
+  const tax = taxText(round2(cartTotal() - discountNow()));
+  const open = state.promo.coupon || state.promo.error ? 'open' : '';
   foot.innerHTML = `
-    <div class="sum-row"><span class="caption upper muted">Subtotal</span><strong class="h-sm">${money(cartTotal())}</strong></div>
+    <div class="sum-row"><span class="caption upper muted">Subtotal</span><strong class="${q && q.discount > 0 ? '' : 'h-sm'}">${money(cartTotal())}</strong></div>
+    ${promoLines(q, { gift: false })}
+    ${q && q.discount > 0 ? `<div class="sum-row"><span class="caption upper muted">Total</span><strong class="h-sm">${money(q.total)}</strong></div>` : ''}
+    <details class="coupon-box" ${open}><summary>¿Tienes un cupón?</summary>
+      <form class="coupon-form" id="coupon-form" novalidate><input type="text" name="coupon" maxlength="24" placeholder="Código" value="${esc(state.promo.coupon)}" autocomplete="off" aria-label="Código del cupón"><button type="submit" class="btn btn-sm btn-outline">Aplicar</button></form>
+      ${state.promo.error && state.promo.coupon ? `<p class="err-text caption" role="alert">${esc(state.promo.error)}</p>` : q?.coupon_note ? `<p class="caption muted">${esc(q.coupon_note)}</p>` : q?.applied?.code ? `<p class="caption">Cupón <b>${esc(q.applied.code)}</b> aplicado.</p>` : ''}
+    </details>
     <p class="caption muted">${tax ? `${tax}. ` : ''}El envío se coordina al finalizar.</p>
     <button type="button" class="btn btn-lemon btn-block" id="go-checkout">Finalizar compra ${icon('arrowRight', 16)}</button>`;
 }
 
 function openCart() {
   renderCart();
+  refreshQuote();
   const d = $('#cart-dialog');
   if (!d.open) d.showModal();
 }
@@ -681,6 +734,7 @@ function openCheckout() {
   $('#cart-dialog').close();
   state.checkout = { delivery: 'retiro', payment: 'tarjeta', error: '', busy: false };
   renderCheckout();
+  refreshQuote();
   const d = $('#checkout-dialog');
   if (!d.open) d.showModal();
 }
@@ -688,7 +742,7 @@ function openCheckout() {
 function renderCheckout() {
   const c = state.checkout;
   const lines = cartLines();
-  const tax = taxText(cartTotal());
+  const me = acct.getCustomer();
   $('#co-content').innerHTML = `
   <div class="co-grid">
     <form class="co-form" id="co-form" novalidate>
@@ -697,10 +751,12 @@ function renderCheckout() {
         <button type="button" class="icon-btn" data-close aria-label="Cerrar">${icon('x', 22)}</button>
       </div>
       <div class="co-row">
-        <label class="field"><span>Nombre completo</span><input type="text" name="name" autocomplete="name" required maxlength="80"></label>
-        <label class="field"><span>Teléfono</span><input type="tel" name="phone" autocomplete="tel" required maxlength="30"></label>
+        <label class="field"><span>Nombre completo</span><input type="text" name="name" autocomplete="name" required maxlength="80" value="${esc(me?.name || '')}"></label>
+        <label class="field"><span>Teléfono</span><input type="tel" name="phone" autocomplete="tel" required maxlength="30" value="${esc(me?.phone || '')}"></label>
       </div>
-      <label class="field"><span>Correo electrónico</span><input type="email" name="email" autocomplete="email" required maxlength="120"></label>
+      <label class="field"><span>Correo electrónico</span><input type="email" name="email" autocomplete="email" required maxlength="120" value="${esc(me?.email || '')}"></label>
+      ${me ? `<p class="caption muted co-acct">Compras con tu cuenta: el pedido queda en «Mis pedidos».</p>` : `<p class="caption muted co-acct">Compras como invitado. <button type="button" class="link-btn" data-x="account">Entrar o crear cuenta</button> para ver tus pedidos y favoritos.</p>`}
+      <label class="chk co-wa"><input type="checkbox" name="notify" ${me?.notify_opt_in ? 'checked' : ''}><span>Quiero recibir por WhatsApp el estado de mi pedido (opcional)</span></label>
 
       <fieldset class="opts"><legend>Entrega</legend>
         <label class="opt"><input type="radio" name="delivery" value="retiro" ${c.delivery === 'retiro' ? 'checked' : ''}><span>Retiro en tienda<small>Gratis · listo en 1 hora</small></span></label>
@@ -708,23 +764,52 @@ function renderCheckout() {
       </fieldset>
       <label class="field" id="addr-field" ${c.delivery === 'envio' ? '' : 'hidden'}><span>Dirección de envío</span><input type="text" name="address" autocomplete="street-address" maxlength="200"></label>
 
-      <fieldset class="opts"><legend>Pago</legend>
+      <div class="co-promo">
+        <div class="grid-2x">
+          <label class="field"><span>Cupón (opcional)</span><input type="text" name="coupon" maxlength="24" value="${esc(state.promo.coupon)}" autocomplete="off" placeholder="Código"></label>
+          <label class="field"><span>Tarjeta de regalo (opcional)</span><input type="text" name="gift" maxlength="24" value="${esc(state.promo.gift)}" autocomplete="off" placeholder="GC-XXXX-XXXX-XXXX"></label>
+        </div>
+        <p class="caption" id="co-promo-msg" aria-live="polite"></p>
+      </div>
+
+      <fieldset class="opts" id="co-pay"><legend>Pago</legend>
         ${PAYMENTS.map(
           ([v, t, s]) => `<label class="opt"><input type="radio" name="payment" value="${v}" ${c.payment === v ? 'checked' : ''}><span>${t}<small>${s}</small></span></label>`
         ).join('')}
       </fieldset>
 
       <p class="err-text" id="co-error" role="alert">${esc(c.error)}</p>
-      <button type="submit" class="btn btn-lemon btn-block" ${c.busy ? 'disabled' : ''}>${c.busy ? 'Procesando…' : `Confirmar y pagar ${money(cartTotal())}`}</button>
+      <button type="submit" class="btn btn-lemon btn-block" id="co-submit" ${c.busy ? 'disabled' : ''}>${c.busy ? 'Procesando…' : `Confirmar y pagar ${money(payable())}`}</button>
     </form>
     <aside class="co-summary forest" aria-label="Resumen del pedido">
       <h3 class="sub">Tu pedido</h3>
       ${lines.map((l) => lineHTML(l, { editable: false })).join('')}
-      <div class="sum-row co-total"><span class="caption upper muted">Total</span><strong class="h">${money(cartTotal())}</strong></div>
-      ${tax ? `<p class="caption muted">${tax}</p>` : ''}
+      <div id="co-sum"></div>
       <p class="demo-note">Demostración: al confirmar, el inventario se descuenta automáticamente y se registra el movimiento.</p>
     </aside>
   </div>`;
+  renderCheckoutSummary();
+}
+
+// Totales del resumen (y el botón de pagar): se redibujan solos cuando cambian el cupón o la tarjeta de regalo, sin tocar lo que el cliente ya escribió.
+function renderCheckoutSummary() {
+  const box = $('#co-sum');
+  if (!box) return;
+  const q = quoteNow();
+  const tax = taxText(round2(cartTotal() - discountNow()));
+  box.innerHTML = `${q && (q.discount > 0 || q.gift) ? `<div class="sum-row"><span class="caption upper muted">Subtotal</span><strong>${money(cartTotal())}</strong></div>` : ''}${promoLines(q)}
+    <div class="sum-row co-total"><span class="caption upper muted">${q?.gift ? 'Resto a pagar' : 'Total'}</span><strong class="h">${money(payable())}</strong></div>
+    ${tax ? `<p class="caption muted">${tax}</p>` : ''}`;
+  const submit = $('#co-submit');
+  if (submit && !state.checkout.busy) submit.textContent = payable() === 0 ? 'Confirmar pedido' : `Confirmar y pagar ${money(payable())}`;
+  const pay = $('#co-pay');
+  if (pay) pay.hidden = payable() === 0;
+  const msg = $('#co-promo-msg');
+  if (msg) {
+    const err = state.promo.error;
+    msg.className = `caption ${err ? 'err-text' : ''}`;
+    msg.textContent = err || (q?.applied?.code ? `Cupón ${q.applied.code} aplicado.` : q?.coupon_note || '') + (q?.gift ? ` Tarjeta de regalo: se usan ${money(q.gift.applied)} de ${money(q.gift.balance)}.` : '');
+  }
 }
 
 async function submitCheckout(form) {
@@ -737,6 +822,8 @@ async function submitCheckout(form) {
   const phone = String(fd.get('phone') || '').trim();
   const address = String(fd.get('address') || '').trim();
 
+  state.promo.coupon = String(fd.get('coupon') || '').trim().toUpperCase();
+  state.promo.gift = String(fd.get('gift') || '').trim().toUpperCase();
   const err = !name ? 'Escribe tu nombre.' : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? 'Escribe un correo válido.'
     : !phone ? 'Escribe un teléfono de contacto.' : c.delivery === 'envio' && !address ? 'Escribe la dirección de envío.' : '';
   if (err) { $('#co-error').textContent = err; return; }
@@ -753,12 +840,22 @@ async function submitCheckout(form) {
         delivery: c.delivery,
         address,
         payment_method: c.payment,
+        coupon: state.promo.coupon || undefined,
+        gift_code: state.promo.gift || undefined,
+        notify_opt_in: fd.get('notify') === 'on',
         items: state.cart.map((l) => ({ variant_id: l.variantId, qty: l.qty })),
       },
+      token: acct.getToken(),
     });
     state.cart = [];
+    state.promo = { coupon: '', gift: '', quote: null, error: '' };
     saveCart();
     renderCartBadge();
+    if (order.payment?.url) {
+      // Pasarela de pago externa: el pedido ya reservó el stock; se manda al cliente a pagar y vuelve a #pedido/CÓDIGO.
+      $('#co-content').innerHTML = '<div class="co-done"><p class="sub">Te llevamos a la página de pago…</p><p class="muted">Tu pedido ya está reservado. Si no avanza, <a href="' + esc(order.payment.url) + '">toca aquí</a>.</p></div>';
+      return void location.assign(order.payment.url);
+    }
     renderDone(order);
     fetchList(); // el stock cambió: se muestra al día
   } catch (e) {
@@ -785,17 +882,21 @@ function renderDone(order) {
   <div class="co-done">
     <span class="big-check">${icon('checkCircle', 48)}</span>
     <h2 class="h-lg" id="co-title">Gracias, ${esc(order.customer_name.split(' ')[0])}.</h2>
-    <p class="body-lg">Tu pedido <strong>#${order.id}</strong> quedó confirmado. Enviamos el comprobante a ${esc(order.customer_email)}.</p>
+    <p class="body-lg">Tu pedido <strong>#${order.id}</strong> quedó confirmado. Enviamos el comprobante a ${esc(order.customer_email)}${order.notify_opt_in ? ' y te avisaremos por WhatsApp de cada paso' : ''}.</p>
     <table aria-label="Resumen del pedido">
       ${order.items.map((i) => `<tr><td>${esc(i.name)} · ${sizeLabel(i.size_ml)} × ${i.qty}</td><td>${money(i.unit_price * i.qty)}</td></tr>`).join('')}
+      ${order.discount ? `<tr><td>Descuento${order.promo_label ? ` · ${esc(order.promo_label)}` : ''}</td><td>−${money(order.discount)}</td></tr>` : ''}
+      ${order.gift_amount ? `<tr><td>Pagado con tarjeta de regalo</td><td>−${money(order.gift_amount)}</td></tr>` : ''}
       <tr><td><strong>Total</strong></td><td><strong>${money(order.total)}</strong></td></tr>
     </table>
+    ${order.tracking_code ? `<p class="co-track">Código de seguimiento: <strong>${esc(order.tracking_code)}</strong></p>` : ''}
     <p class="demo-note">Detrás de escena: el stock de ${order.items.length === 1 ? 'este producto' : 'estos productos'} bajó solo y quedó registrado el movimiento${
       order.replenished?.items ? `, y se generó una orden de compra automática (${order.replenished.items} ${order.replenished.items === 1 ? 'producto' : 'productos'} en stock bajo)` : ''
     }.</p>
     <div class="co-actions">
       <button type="button" class="btn btn-lemon" data-close data-go="#catalogo">Seguir comprando</button>
-      <a class="btn btn-outline" href="/admin#movimientos">Ver el movimiento en el panel</a>
+      ${order.tracking_code ? `<a class="btn btn-outline" href="#seguimiento/${esc(order.tracking_code)}" data-close>Seguir mi pedido</a>` : ''}
+      <a class="btn btn-text" href="/admin#movimientos">Ver el movimiento en el panel</a>
     </div>
   </div>`;
 }
@@ -922,7 +1023,7 @@ function bind() {
       if (t.closest('a[href="#catalogo"], [data-cat], [data-view="sale"], [data-brand], .cat-pill, [data-go], [data-close-go]')) goHome({ push: !t.closest('a[href^="#"]') });
     }
     // El enlace del recuadro a la página del producto: se cierra el recuadro y el propio enlace cambia la dirección.
-    if (t.closest('#pd-page')) $('#product-dialog').close();
+    if (t.closest('#pd-page, .bundle-list a')) $('#product-dialog').close();
     // Dentro de un iframe en otra página, el panel no se puede mostrar (por seguridad nunca se incrusta): se abre en una pestaña nueva.
     const adminLink = t.closest('a[href^="/admin"]');
     if (adminLink && window.self !== window.top) {
@@ -1046,6 +1147,19 @@ function bind() {
   co.addEventListener('submit', (e) => {
     e.preventDefault();
     submitCheckout(e.target);
+  });
+  co.addEventListener('change', (e) => {
+    if (e.target.name === 'coupon' || e.target.name === 'gift') {
+      state.promo.coupon = String($('#co-form [name=coupon]').value || '').trim().toUpperCase();
+      state.promo.gift = String($('#co-form [name=gift]').value || '').trim().toUpperCase();
+      refreshQuote();
+    }
+  });
+  $('#cart-foot').addEventListener('submit', (e) => {
+    if (e.target.id !== 'coupon-form') return;
+    e.preventDefault();
+    state.promo.coupon = String(new FormData(e.target).get('coupon') || '').trim().toUpperCase();
+    refreshQuote();
   });
   co.addEventListener('change', (e) => {
     if (e.target.name === 'delivery') {

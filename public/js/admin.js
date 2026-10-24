@@ -1,7 +1,18 @@
 import { api, ApiError, hasToken, setToken, money, num, esc, icon, productArt, tileColor, toast, fmtDateTime, fmtDay, sizeLabel } from './ui.js';
 import { mountThemeSwitch } from './theme.js';
-
-const $ = (sel, root = document) => root.querySelector(sel);
+import { $, qs, debounce, attempt, pagerHTML, openModal, closeModal, bindModal, kit, GROUPS } from './admin-kit.js';
+import { showLabelsNow } from './admin-print.js';
+import { photoField, bindPhotoField } from './admin-photo.js';
+// Secciones del panel: cada módulo se anota en `kit` con sus pantallas, acciones y entrada de menú.
+import './admin-pos.js';
+import './admin-caja.js';
+import './admin-pedidos.js';
+import './admin-regalos.js';
+import './admin-promos.js';
+import './admin-sets.js';
+import './admin-reportes.js';
+import './admin-avisos.js';
+import './admin-usuarios.js';
 
 const BRAND = window.__BRAND || { name: "D'Luxe Perfumería", short: "D'Luxe" };
 const CATEGORIES = ['Damas', 'Caballeros', 'Infantil', 'Unisex'];
@@ -10,7 +21,6 @@ const PAGE = 50;
 
 const state = {
   view: 'resumen',
-  suppliers: [],
   counts: null,
   inv: { q: '', filter: 'todos', page: 1, data: null },
   prod: { q: '', category: '', status: '', page: 1, data: null },
@@ -18,79 +28,37 @@ const state = {
   rev: { page: 1 },
   woo: { file: null, fileName: '', report: null, preview: null, done: null, updateStock: null },
   chartTable: false,
-  pos: { q: '', lines: [], results: [], total: 0, pay: 'efectivo', customer: '' }, // cada línea: { id, qty, v } con una copia de la variante
 };
 let renderToken = 0;
 
-const NAV = [
-  ['resumen', 'Resumen', 'chart'],
-  ['pos', 'Punto de venta', 'register'],
-  ['inventario', 'Inventario', 'box'],
-  ['productos', 'Productos', 'package'],
-  ['compras', 'Compras', 'truck'],
-  ['pedidos', 'Pedidos', 'receipt'],
-  ['resenas', 'Reseñas', 'star'],
-  ['movimientos', 'Movimientos', 'history'],
-  ['woocommerce', 'WooCommerce', 'link'],
-];
+// Menú: cada entrada solo se muestra a quien tiene el permiso. Las secciones nuevas se suman desde sus módulos.
+kit.add({
+  nav: [
+    { id: 'resumen', label: 'Resumen', icon: 'chart', perm: 'resumen', group: '', order: 0 },
+    { id: 'inventario', label: 'Inventario', icon: 'box', perm: 'inventario', group: 'Inventario', order: 10 },
+    { id: 'productos', label: 'Productos', icon: 'package', perm: 'productos', group: 'Inventario', order: 20 },
+    { id: 'compras', label: 'Compras', icon: 'truck', perm: 'compras', group: 'Inventario', order: 40 },
+    { id: 'movimientos', label: 'Movimientos', icon: 'history', perm: 'movimientos', group: 'Inventario', order: 50 },
+    { id: 'resenas', label: 'Reseñas', icon: 'star', perm: 'resenas', group: 'Análisis', order: 20 },
+    { id: 'woocommerce', label: 'WooCommerce', icon: 'link', perm: 'woocommerce', group: 'Conexión', order: 30 },
+  ],
+});
 
 // ─── Utilidades de estado ──────────────────────────────────────────────────
 const artOf = (v) => productArt({ image: v.image, color: v.color, id: v.product_id, name: v.name }, { title: v.name });
 const isLow = (v) => v.stock > 0 && v.stock <= v.min_stock;
 
 function stockBadges(v) {
+  if (v.is_set) return '<span class="badge info">Set</span>' + (v.stock === 0 ? ' <span class="badge out">Agotado</span>' : '');
   const main = v.stock === 0 ? '<span class="badge out">Agotado</span>' : isLow(v) ? '<span class="badge low">Stock bajo</span>' : '<span class="badge ok">OK</span>';
   return main + (v.on_order ? ' <span class="badge info">En camino</span>' : '');
 }
 
-const orderBadge = (s) => `<span class="badge ${{ pagado: 'info', entregado: 'ok', cancelado: 'danger' }[s] || ''}">${esc(s)}</span>`;
 const typeBadge = (t) => `<span class="badge ${{ entrada: 'ok', salida: '', ajuste: 'low' }[t] || ''}">${esc(t)}</span>`;
 const signed = (n) => `<span class="pos-qty ${n > 0 ? 'plus' : 'minus'}">${n > 0 ? '+' : '−'}${Math.abs(n)}</span>`;
 
-// Con miles de productos nada se carga completo: cada lista pide su página al servidor.
-const debounce = (fn, ms = 250) => {
-  let t;
-  return (...a) => {
-    clearTimeout(t);
-    t = setTimeout(() => fn(...a), ms);
-  };
-};
 const getVariant = (id) => api(`/api/admin/variants/${id}`); // siempre fresca: el stock cambia con cada venta
-const qs = (o) => new URLSearchParams(Object.entries(o).filter(([, v]) => v !== '' && v != null)).toString();
-
-function pagerHTML(d, act) {
-  if (!d || d.total === 0) return '';
-  const from = (d.page - 1) * d.limit + 1;
-  const to = Math.min(d.page * d.limit, d.total);
-  return `<nav class="pager" aria-label="Paginación"><span class="caption upper muted">${num(from)}–${num(to)} de ${num(d.total)}</span>
-    <div class="acts"><button type="button" class="btn btn-sm btn-outline" data-act="${act}" data-page="${d.page - 1}" ${d.page <= 1 ? 'disabled' : ''}>Anterior</button>
-    <span class="pager-n">Página ${d.page} de ${d.pages}</span>
-    <button type="button" class="btn btn-sm btn-outline" data-act="${act}" data-page="${d.page + 1}" ${d.page >= d.pages ? 'disabled' : ''}>Siguiente</button></div></nav>`;
-}
-
-// ─── Modal genérico ────────────────────────────────────────────────────────
-let modalSubmit = null;
-
-function openModal({ title, body, submit = 'Guardar', wide = false, onSubmit = null, onOpen = null }) {
-  const dlg = $('#modal');
-  dlg.classList.toggle('wide', wide);
-  $('#modal-title').textContent = title;
-  $('#modal-body').innerHTML = body;
-  $('#modal-err').innerHTML = '';
-  $('#modal-foot').innerHTML = onSubmit
-    ? `<button type="button" class="btn btn-outline" data-modal-close>Cancelar</button><button type="submit" class="btn btn-solid" id="modal-submit">${esc(submit)}</button>`
-    : '<button type="button" class="btn btn-solid" data-modal-close>Cerrar</button>';
-  modalSubmit = onSubmit;
-  if (!dlg.open) dlg.showModal();
-  onOpen?.(dlg);
-  $('#modal-body input:not([type=hidden]), #modal-body select, #modal-body textarea')?.focus();
-}
-const closeModal = () => $('#modal').close();
-
-function showModalError(e) {
-  const details = Array.isArray(e.details) && e.details.length ? `<ul class="errors">${e.details.slice(0, 12).map((d) => `<li>${esc(d)}</li>`).join('')}</ul>` : '';
-  $('#modal-err').innerHTML = `${esc(e.message)}${details}`;
-}
+const supplierList = () => kit.suppliers;
 
 // ─── Acceso ────────────────────────────────────────────────────────────────
 function showLogin(msg = '') {
@@ -98,24 +66,43 @@ function showLogin(msg = '') {
   $('#login').hidden = false;
   $('#login-err').textContent = msg;
   $('#login-pw').value = '';
-  $('#login-pw').focus();
+  ($('#login-user').value ? $('#login-pw') : $('#login-user')).focus();
 }
 
 async function enter() {
-  state.suppliers = await api('/api/admin/suppliers');
+  kit.user = await api('/api/admin/me');
+  if (kit.can(['compras', 'inventario'])) kit.suppliers = await api('/api/admin/suppliers').catch(() => []);
+  buildNav();
   $('#login').hidden = true;
   $('#app').hidden = false;
   route();
 }
 
 // ─── Navegación ────────────────────────────────────────────────────────────
+const allowedNav = () => kit.nav.filter((n) => kit.can(n.perm)).sort((a, b) => (GROUPS.indexOf(a.group) + 1 || 0) - (GROUPS.indexOf(b.group) + 1 || 0) || (a.order ?? 50) - (b.order ?? 50));
+
 function buildNav() {
-  $('#side-nav').innerHTML = NAV.map(
-    ([id, label, ic]) =>
-      `<a class="side-link" href="#${id}" data-nav="${id}" aria-label="${label}" title="${label}">${icon(ic, 18)}<span>${label}</span><span class="pill" data-pill="${id}" hidden></span></a>`
-  ).join('');
-  for (const [sel, ic, label] of [['#link-store', 'store', 'Ver tienda'], ['#btn-seed', 'package', 'Catálogo masivo'], ['#btn-reset', 'refresh', 'Reiniciar demo'], ['#btn-logout', 'logout', 'Salir']]) {
+  let last = null;
+  $('#side-nav').innerHTML = allowedNav()
+    .map((n) => {
+      const head = n.group !== last && n.group ? `<p class="side-group">${esc(n.group)}</p>` : '';
+      last = n.group;
+      return `${head}<a class="side-link" href="#${n.id}" data-nav="${n.id}" aria-label="${esc(n.label)}" title="${esc(n.label)}">${icon(n.icon, 18)}<span>${esc(n.label)}</span><span class="pill" data-pill="${n.id}" hidden></span></a>`;
+    })
+    .join('');
+  const u = kit.user;
+  $('#side-user').innerHTML = `<b>${esc(u.name)}</b><span>${esc(u.role_label)}</span>`;
+  const foot = [
+    ['#link-store', 'store', 'Ver tienda', true],
+    ['#btn-account', 'user', 'Mi cuenta', true],
+    ['#btn-policy', 'sliders', 'Ajustes de la tienda', kit.can('configuracion')],
+    ['#btn-seed', 'package', 'Catálogo masivo', kit.can('ajustes')],
+    ['#btn-reset', 'refresh', 'Reiniciar demo', kit.can('ajustes')],
+    ['#btn-logout', 'logout', 'Salir', true],
+  ];
+  for (const [sel, ic, label, on] of foot) {
     const el = $(sel);
+    el.hidden = !on;
     el.innerHTML = `${icon(ic, 18)}<span>${label}</span>`;
     el.setAttribute('aria-label', label);
     el.title = label;
@@ -123,6 +110,7 @@ function buildNav() {
   $('#modal-x').innerHTML = icon('x', 22);
 }
 
+// d: lo que devuelve /api/admin/badges, o el resumen completo (/api/admin/dashboard)
 function setBadges(d) {
   const set = (id, n) => {
     const el = $(`[data-pill="${id}"]`);
@@ -130,19 +118,29 @@ function setBadges(d) {
     el.textContent = n;
     el.hidden = !n;
   };
-  set('inventario', d.inventory.out_count + d.inventory.low_count);
-  set('compras', d.pendingPurchases);
+  const inv = typeof d.inventory === 'number' ? d.inventory : d.inventory.out_count + d.inventory.low_count;
+  set('inventario', inv);
+  set('compras', d.pendingPurchases ?? d.purchases ?? 0);
+  kit.onBadges?.(d);
 }
+kit.badges = setBadges;
 
 function route() {
   if ($('#app').hidden) return; // sin sesión no se pide nada
-  const name = location.hash.slice(1);
-  show(VIEWS[name] ? name : 'resumen');
+  const [name, ...rest] = location.hash.slice(1).split('/');
+  kit.arg = rest.join('/');
+  const allowed = new Set(allowedNav().map((n) => n.id));
+  if (VIEWS[name] && allowed.has(name)) return show(name);
+  // lo que no existe o no se permite lleva a la primera pantalla disponible
+  const first = ['resumen', 'pos', 'pedidos', 'inventario', 'caja', 'reportes'].find((id) => allowed.has(id)) || [...allowed][0];
+  if (first && first !== name) location.hash = `#${first}`;
+  else if (first) show(first);
 }
 
 async function show(name, { silent = false } = {}) {
   const token = ++renderToken;
   state.view = name;
+  kit.view = name;
   const meta = VIEWS[name];
   document.querySelectorAll('[data-nav]').forEach((a) => {
     const on = a.dataset.nav === name;
@@ -163,13 +161,14 @@ async function show(name, { silent = false } = {}) {
     $('#view').innerHTML = out.html;
     $('#page-actions').innerHTML = out.actions || '';
     out.after?.();
-    if (name !== 'resumen') api('/api/admin/dashboard').then(setBadges).catch(() => {});
+    if (name !== 'resumen') api('/api/admin/badges').then(setBadges).catch(() => {});
     if (!silent) window.scrollTo({ top: 0 });
   } catch (e) {
     if (token !== renderToken || (e instanceof ApiError && e.status === 401)) return;
     $('#view').innerHTML = `<div class="panel light"><p class="sub">No se pudo cargar esta sección.</p><p class="muted">${esc(e.message)}</p><p><button type="button" class="btn btn-solid" data-act="reload">Reintentar</button></p></div>`;
   }
 }
+kit.refresh = () => show(state.view, { silent: true });
 
 // ═══ RESUMEN ═══════════════════════════════════════════════════════════════
 function niceMax(v) {
@@ -311,117 +310,6 @@ function bindChart(series) {
   });
 }
 
-// ═══ PUNTO DE VENTA ════════════════════════════════════════════════════════
-let posReq = 0;
-
-async function renderPos() {
-  const html = `
-  <div class="pos">
-    <section class="panel light">
-      <label class="field"><span class="sr-only">Buscar producto</span>
-        <input type="search" id="pos-q" placeholder="Busca por nombre o marca, o escanea el SKU y presiona Enter" autocomplete="off" value="${esc(state.pos.q)}"></label>
-      <div class="pos-list" id="pos-list"></div>
-    </section>
-    <aside class="panel forest ticket" id="ticket" aria-label="Ticket de venta"></aside>
-  </div>`;
-  return { html, after: () => { searchPos(); drawTicket(); $('#pos-q').focus(); } };
-}
-
-const posQty = (id) => state.pos.lines.find((l) => l.id === id)?.qty || 0;
-
-async function searchPos() {
-  const req = ++posReq;
-  try {
-    const r = await api(`/api/admin/inventory?${qs({ sellable: 1, limit: 40, sort: state.pos.q.trim() ? 'nombre' : 'stock-desc', q: state.pos.q.trim() })}`);
-    if (req !== posReq || state.view !== 'pos') return;
-    state.pos.results = r.rows;
-    state.pos.total = r.total;
-    drawPosList();
-  } catch (e) {
-    if (req === posReq && $('#pos-list') && !(e instanceof ApiError && e.status === 401)) $('#pos-list').innerHTML = `<p class="empty-note">${esc(e.message)}</p>`;
-  }
-}
-const searchPosSoon = debounce(searchPos, 220);
-
-function drawPosList() {
-  const list = $('#pos-list');
-  if (!list) return;
-  const rows = state.pos.results;
-  const more = state.pos.total > rows.length ? `<p class="empty-note">Mostrando ${rows.length} de ${num(state.pos.total)}. Escribe para afinar la búsqueda.</p>` : '';
-  list.innerHTML = rows.length
-    ? rows
-        .map((v) => {
-          const left = v.stock - posQty(v.id);
-          return `<button type="button" class="pos-item" data-act="pos-add" data-id="${v.id}" ${left <= 0 ? 'disabled' : ''}>
-            <span class="pos-art" style="--tile:${tileColor(v.product_id)}">${artOf(v)}</span>
-            <span class="who" style="display:grid"><b>${esc(v.name)} · ${sizeLabel(v.size_ml)}</b><span class="muted caption">${esc(v.sku)} · ${left <= 0 ? 'sin stock' : `${left} disp.`}</span></span>
-            <strong>${money(v.price)}</strong></button>`;
-        })
-        .join('') + more
-    : '<p class="empty-note">No hay productos que coincidan.</p>';
-}
-
-function drawTicket() {
-  const lines = state.pos.lines;
-  const total = lines.reduce((s, l) => s + l.v.price * l.qty, 0);
-  const pays = [['efectivo', 'Efectivo'], ['tarjeta', 'Tarjeta'], ['transferencia', 'Transf.']];
-  $('#ticket').innerHTML = `
-    <div class="panel-head" style="margin:0"><h2>Ticket</h2>${lines.length ? '<button type="button" class="btn btn-sm btn-text" data-act="pos-clear">Vaciar</button>' : ''}</div>
-    ${
-      lines.length
-        ? lines
-            .map(
-              (l) => `<div class="line"><div class="line-top"><div><p class="line-name">${esc(l.v.name)}</p><p class="caption upper muted">${sizeLabel(l.v.size_ml)} · ${money(l.v.price)}</p></div>
-              <button type="button" class="icon-btn sm" data-act="pos-del" data-id="${l.id}" aria-label="Quitar ${esc(l.v.name)}">${icon('trash', 18)}</button></div>
-              <div class="line-bottom"><div class="stepper" role="group" aria-label="Cantidad">
-                <button type="button" data-act="pos-dec" data-id="${l.id}" aria-label="Menos" ${l.qty <= 1 ? 'disabled' : ''}>${icon('minus', 16)}</button><output>${l.qty}</output>
-                <button type="button" data-act="pos-inc" data-id="${l.id}" aria-label="Más" ${l.qty >= l.v.stock ? 'disabled' : ''}>${icon('plus', 16)}</button></div>
-              <strong>${money(l.v.price * l.qty)}</strong></div></div>`
-            )
-            .join('')
-        : '<p class="ticket-empty">Agrega productos desde la lista o escanea un SKU.</p>'
-    }
-    <div class="sum-row" style="display:flex;justify-content:space-between;align-items:baseline"><span class="caption upper muted">Total</span><strong class="h">${money(total)}</strong></div>
-    <fieldset class="opts" style="border:0;padding:0;margin:0"><legend class="sr-only">Método de pago</legend>
-      ${pays.map(([v, t]) => `<label class="opt"><input type="radio" name="pos-pay" value="${v}" ${state.pos.pay === v ? 'checked' : ''}>${t}</label>`).join('')}
-    </fieldset>
-    <label class="field"><span>Cliente (opcional)</span><input type="text" id="pos-customer" maxlength="80" value="${esc(state.pos.customer)}" placeholder="Cliente mostrador"></label>
-    <button type="button" class="btn btn-lemon btn-block" data-act="pos-pay" ${lines.length ? '' : 'disabled'}>Cobrar ${money(total)}</button>`;
-}
-
-function posAdd(v) {
-  if (!v || !v.active || !v.product_active) return;
-  const line = state.pos.lines.find((l) => l.id === v.id);
-  if ((line?.qty || 0) >= v.stock) return toast(`No hay más stock de ${v.name} ${sizeLabel(v.size_ml)}`, 'error');
-  if (line) line.qty += 1;
-  else state.pos.lines.push({ id: v.id, qty: 1, v });
-  drawPosList();
-  drawTicket();
-}
-
-async function posPay() {
-  const lines = state.pos.lines;
-  if (!lines.length) return;
-  try {
-    const order = await api('/api/admin/pos/orders', {
-      method: 'POST',
-      body: {
-        customer: { name: state.pos.customer.trim() || 'Cliente mostrador' },
-        payment_method: state.pos.pay,
-        items: lines.map((l) => ({ variant_id: l.id, qty: l.qty })),
-      },
-    });
-    toast(`Venta #${order.id} cobrada: ${money(order.total)}. El stock ya se descontó.`);
-    if (order.replenished?.items) toast('Algo llegó al mínimo: se generó una orden de compra automática.');
-    state.pos.lines = [];
-    state.pos.customer = '';
-  } catch (e) {
-    toast(e.message, 'error');
-  }
-  await searchPos();
-  drawTicket();
-}
-
 // ═══ INVENTARIO ════════════════════════════════════════════════════════════
 async function fetchInv() {
   const { q, filter, page } = state.inv;
@@ -445,7 +333,7 @@ async function renderInventory() {
   </section>`;
   return {
     html,
-    actions: `<button type="button" class="btn btn-lemon" data-act="import">${icon('upload', 18)} Importar entradas (CSV)</button>`,
+    actions: kit.can('inventario_editar') ? `<button type="button" class="btn btn-lemon" data-act="import">${icon('upload', 18)} Importar entradas (CSV)</button>` : '',
     after: () => { drawInvFilters(); drawInv(); },
   };
 }
@@ -460,20 +348,22 @@ function drawInvFilters() {
 
 function drawInv() {
   const rows = state.inv.data.rows;
+  const showCost = kit.can('costos');
+  const canEdit = kit.can('inventario_editar');
   $('#inv-table').innerHTML = rows.length
-    ? `<table class="tbl"><thead><tr><th>Producto</th><th>SKU</th><th class="r">Tamaño</th><th class="r">Stock</th><th>Estado</th><th class="r">Mín.</th><th class="r">Costo</th><th class="r">Precio</th><th>Proveedor</th><th></th></tr></thead><tbody>
+    ? `<table class="tbl"><thead><tr><th>Producto</th><th>SKU</th><th class="r">Tamaño</th><th class="r">Stock</th><th>Estado</th><th class="r">Mín.</th>${showCost ? '<th class="r">Costo</th>' : ''}<th class="r">Precio</th>${showCost ? '<th>Proveedor</th>' : ''}<th></th></tr></thead><tbody>
       ${rows
         .map(
           (v) => `<tr class="${v.active && v.product_active ? '' : 'is-inactive'}">
         <td><span class="name">${esc(v.name)}</span><span class="sub-line">${esc(v.brand)}${v.kind !== 'Perfume' ? ` · ${esc(v.kind)}` : ''}${v.active && v.product_active ? '' : ' · oculto'}</span></td>
-        <td class="nowrap">${esc(v.sku)}</td><td class="r nowrap">${sizeLabel(v.size_ml)}</td>
+        <td class="nowrap">${esc(v.sku)}${v.barcode ? `<span class="sub-line">${esc(v.barcode)}</span>` : ''}</td><td class="r nowrap">${sizeLabel(v.size_ml)}</td>
         <td class="r"><span class="pos-qty">${num(v.stock)}</span></td><td>${stockBadges(v)}</td>
-        <td class="r">${v.min_stock}</td><td class="r">${money(v.cost)}</td><td class="r">${money(v.price)}${v.compare_at ? ` <s class="was">${money(v.compare_at)}</s>` : ''}</td>
-        <td>${esc(v.supplier_name || '—')}</td>
+        <td class="r">${v.is_set ? '—' : v.min_stock}</td>${showCost ? `<td class="r">${money(v.cost)}</td>` : ''}<td class="r">${money(v.price)}${v.compare_at ? ` <s class="was">${money(v.compare_at)}</s>` : ''}</td>
+        ${showCost ? `<td>${esc(v.supplier_name || '—')}</td>` : ''}
         <td><div class="acts">
-          <button type="button" class="btn btn-sm btn-outline" data-act="adjust" data-id="${v.id}">Ajustar</button>
+          ${canEdit && !v.is_set ? `<button type="button" class="btn btn-sm btn-outline" data-act="adjust" data-id="${v.id}">Ajustar</button>` : ''}
           <button type="button" class="icon-btn sm" data-act="history" data-id="${v.id}" aria-label="Historial de ${esc(v.name)} ${sizeLabel(v.size_ml)}" title="Historial">${icon('history', 18)}</button>
-          <button type="button" class="icon-btn sm" data-act="edit-variant" data-id="${v.id}" aria-label="Editar ${esc(v.name)} ${sizeLabel(v.size_ml)}" title="Editar precio, mínimo y proveedor">${icon('edit', 18)}</button>
+          ${canEdit && !v.is_set ? `<button type="button" class="icon-btn sm" data-act="edit-variant" data-id="${v.id}" aria-label="Editar ${esc(v.name)} ${sizeLabel(v.size_ml)}" title="Editar precio, mínimo, proveedor y código de barras">${icon('edit', 18)}</button>` : ''}
         </div></td></tr>`
         )
         .join('')}</tbody></table>`
@@ -537,7 +427,7 @@ async function historyDialog(id) {
 }
 
 function supplierOptions(selected) {
-  return `<option value="">Sin proveedor</option>${state.suppliers.map((s) => `<option value="${s.id}" ${s.id === selected ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}`;
+  return `<option value="">Sin proveedor</option>${kit.suppliers.map((s) => `<option value="${s.id}" ${s.id === selected ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}`;
 }
 
 async function editVariantDialog(id) {
@@ -552,6 +442,8 @@ async function editVariantDialog(id) {
         <label class="field"><span>Cantidad a reponer</span><input type="number" name="reorder_qty" min="1" step="1" value="${v.reorder_qty}" required><small>Lo que se pide en la compra automática.</small></label>
       </div>
       <label class="field"><span>Proveedor</span><select name="supplier_id">${supplierOptions(v.supplier_id)}</select></label>
+      <label class="field"><span>Código de barras</span><input type="text" name="barcode" maxlength="32" inputmode="numeric" value="${esc(v.barcode || '')}" placeholder="Escanéalo o escríbelo"><small>EAN-13 u otro. El lector del mostrador lo reconoce al escanear; si no tiene, se usa el SKU.</small></label>
+      <div class="label-tools"><label class="field"><span>Copias de la etiqueta</span><input type="number" id="label-copies" min="1" max="100" value="1"></label><button type="button" class="btn btn-sm btn-outline" data-act="print-label" data-id="${id}">${icon('printer', 16)} Imprimir etiqueta</button></div>
       <label class="switch"><input type="checkbox" name="active" ${v.active ? 'checked' : ''}><span class="track" aria-hidden="true"></span><span>Disponible para la venta</span></label>`,
     onSubmit: async (form) => {
       const f = new FormData(form);
@@ -559,7 +451,7 @@ async function editVariantDialog(id) {
         method: 'PATCH',
         body: {
           price: f.get('price'), compare_at: f.get('compare_at') || null, cost: f.get('cost'), min_stock: f.get('min_stock'), reorder_qty: f.get('reorder_qty'),
-          supplier_id: f.get('supplier_id') || null, active: f.get('active') === 'on',
+          supplier_id: f.get('supplier_id') || null, barcode: f.get('barcode') || '', active: f.get('active') === 'on',
         },
       });
       toast('Cambios guardados.');
@@ -675,6 +567,7 @@ const vrowHTML = (v = {}) => `<div class="vrow">
   <label class="field"><span>Stock inicial</span><input type="number" data-k="stock" min="0" step="1" value="${v.stock ?? 10}" required></label>
   <label class="field"><span>Mínimo</span><input type="number" data-k="min_stock" min="0" step="1" value="${v.min_stock ?? 3}" required></label>
   <label class="field"><span>Reponer</span><input type="number" data-k="reorder_qty" min="1" step="1" value="${v.reorder_qty ?? 12}" required></label>
+  <label class="field"><span>Código de barras</span><input type="text" data-k="barcode" maxlength="32" inputmode="numeric" placeholder="Opcional"></label>
   <button type="button" class="icon-btn sm" data-act="del-vrow" aria-label="Quitar este tamaño" title="Quitar">${icon('trash', 18)}</button>
 </div>`;
 
@@ -687,6 +580,7 @@ async function newProductDialog() {
     title: 'Nuevo producto',
     wide: true,
     submit: 'Crear producto',
+    onOpen: (dlg) => { bindPhotoField(dlg); dlg.querySelector('input[name=name]')?.focus(); },
     body: `<div class="grid-2">
         <label class="field"><span>Nombre</span><input type="text" name="name" required maxlength="120"></label>
         <label class="field"><span>Marca</span><input type="text" name="brand" list="brands-list" required maxlength="60" placeholder="Elige o escribe una marca"><datalist id="brands-list">${brands.map((b) => `<option value="${esc(b.name)}">`).join('')}</datalist></label>
@@ -697,11 +591,12 @@ async function newProductDialog() {
       </div>
       <label class="field"><span>Notas olfativas</span><input type="text" name="notes" maxlength="160" placeholder="Jazmín, vainilla, almizcle"></label>
       <label class="field"><span>Descripción</span><textarea name="description" maxlength="1200"></textarea></label>
+      <div class="field"><span>Foto</span>${photoField('')}</div>
       <label class="switch"><input type="checkbox" name="is_new"><span class="track" aria-hidden="true"></span><span>Marcar como novedad</span></label>
       <label class="field"><span>Color del líquido</span><input type="color" name="color" value="#d4a84b"><small>Se usa en la ilustración mientras el producto no tenga foto.</small></label>
       <div><p class="label">Tamaños y stock inicial</p><div id="vrows">${vrowHTML({ size_ml: 50 })}${vrowHTML({ size_ml: 100 })}</div>
         <p style="margin-top:10px"><button type="button" class="btn btn-sm btn-outline" data-act="add-vrow">${icon('plus', 16)} Agregar tamaño</button></p></div>
-      <label class="field"><span>Proveedor</span><select name="supplier_id">${supplierOptions(state.suppliers[0]?.id)}</select></label>`,
+      <label class="field"><span>Proveedor</span><select name="supplier_id">${supplierOptions(kit.suppliers[0]?.id)}</select></label>`,
     onSubmit: async (form) => {
       const f = new FormData(form);
       const variants = [...form.querySelectorAll('.vrow')].map((row) => {
@@ -714,7 +609,7 @@ async function newProductDialog() {
         method: 'POST',
         body: {
           name: f.get('name'), brand: f.get('brand'), category: f.get('category'), subcategory: f.get('subcategory'), kind: f.get('kind'),
-          family: f.get('family'), notes: f.get('notes'), description: f.get('description'), color: f.get('color'), is_new: f.get('is_new') === 'on', variants,
+          family: f.get('family'), notes: f.get('notes'), description: f.get('description'), color: f.get('color'), image: f.get('image') || '', is_new: f.get('is_new') === 'on', variants,
         },
       });
       toast('Producto creado. Ya aparece en la tienda y su stock inicial quedó registrado.');
@@ -729,6 +624,7 @@ function editProductDialog(id) {
   const cats = p.category === 'Sin clasificar' ? [...CATEGORIES, 'Sin clasificar'] : CATEGORIES;
   openModal({
     title: `Editar · ${p.name}`,
+    wide: true,
     body: `<div class="grid-2">
         <label class="field"><span>Nombre</span><input type="text" name="name" required maxlength="120" value="${esc(p.name)}"></label>
         <label class="field"><span>Marca</span><input type="text" name="brand" maxlength="60" value="${esc(p.brand)}"></label>
@@ -737,12 +633,16 @@ function editProductDialog(id) {
         <label class="field"><span>Tipo</span>${select('kind', KINDS, p.kind)}</label>
         <label class="field"><span>Familia olfativa</span><input type="text" name="family" maxlength="40" value="${esc(p.family || '')}"></label>
       </div>
+      <label class="field"><span>Notas olfativas</span><input type="text" name="notes" maxlength="160" value="${esc(p.notes || '')}" placeholder="Jazmín, vainilla, almizcle"></label>
+      <label class="field"><span>Descripción</span><textarea name="description" maxlength="1200" rows="5">${esc(p.description || '')}</textarea><small>Es el texto que ve el cliente en la ficha del producto.</small></label>
+      <div class="field"><span>Foto</span>${photoField(p.image || '')}</div>
       <label class="switch"><input type="checkbox" name="is_new" ${p.is_new ? 'checked' : ''}><span class="track" aria-hidden="true"></span><span>Marcar como novedad</span></label>`,
+    onOpen: (dlg) => { bindPhotoField(dlg); dlg.querySelector('input[name=name]')?.focus(); },
     onSubmit: async (form) => {
       const f = new FormData(form);
       await api(`/api/admin/products/${id}`, {
         method: 'PATCH',
-        body: { name: f.get('name'), brand: f.get('brand'), category: f.get('category'), subcategory: f.get('subcategory'), kind: f.get('kind'), family: f.get('family'), is_new: f.get('is_new') === 'on' },
+        body: { name: f.get('name'), brand: f.get('brand'), category: f.get('category'), subcategory: f.get('subcategory'), kind: f.get('kind'), family: f.get('family'), notes: f.get('notes'), description: f.get('description'), image: f.get('image') || '', is_new: f.get('is_new') === 'on' },
       });
       toast('Producto actualizado.');
       show(state.view, { silent: true });
@@ -803,7 +703,7 @@ function newPurchaseDialog() {
     title: 'Nueva orden de compra',
     wide: true,
     submit: 'Crear orden',
-    body: `<label class="field"><span>Proveedor</span><select name="supplier_id" required>${state.suppliers.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
+    body: `<label class="field"><span>Proveedor</span><select name="supplier_id" required>${kit.suppliers.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
       <div><p class="label">Productos</p><div id="vrows">${purchaseRowHTML()}</div>
       <p style="margin-top:10px"><button type="button" class="btn btn-sm btn-outline" data-act="add-prow">${icon('plus', 16)} Agregar producto</button></p></div>
       <label class="field"><span>Notas (opcional)</span><input type="text" name="notes" maxlength="160"></label>`,
@@ -831,26 +731,6 @@ function newPurchaseDialog() {
       show(state.view, { silent: true });
     },
   });
-}
-
-// ═══ PEDIDOS ═══════════════════════════════════════════════════════════════
-async function renderOrders() {
-  const orders = await api('/api/admin/orders');
-  const pay = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', transferencia: 'Transferencia', contra_entrega: 'Contra entrega' };
-  const html = `<section class="panel light"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>#</th><th>Fecha</th><th>Canal</th><th>Cliente</th><th>Productos</th><th>Pago</th><th class="r">Total</th><th>Estado</th><th></th></tr></thead><tbody>
-    ${orders
-      .map((o) => {
-        const first = o.items[0];
-        const more = o.items.length - 1;
-        return `<tr><td class="nowrap"><b>#${o.id}</b></td><td class="nowrap">${fmtDateTime(o.created_at)}</td>
-        <td><span class="badge">${o.channel === 'online' ? 'Online' : 'Mostrador'}</span></td>
-        <td><span class="name">${esc(o.customer_name)}</span>${o.delivery ? `<span class="sub-line">${o.delivery === 'envio' ? 'Envío' : 'Retiro en tienda'}</span>` : ''}</td>
-        <td title="${esc(o.items.map((i) => `${i.qty}× ${i.name} ${sizeLabel(i.size_ml)}`).join(', '))}">${first ? `${first.qty}× ${esc(first.name)} ${sizeLabel(first.size_ml)}` : ''}${more > 0 ? ` <span class="muted">+${more} más</span>` : ''}</td>
-        <td>${pay[o.payment_method] || esc(o.payment_method)}</td><td class="r nowrap"><b>${money(o.total)}</b></td><td>${orderBadge(o.status)}</td>
-        <td><div class="acts">${o.status === 'pagado' ? `<button type="button" class="btn btn-sm btn-outline" data-act="deliver" data-id="${o.id}">Entregado</button><button type="button" class="btn btn-sm btn-outline" data-act="cancel-order" data-id="${o.id}">Cancelar</button>` : ''}</div></td></tr>`;
-      })
-      .join('')}</tbody></table></div></section>`;
-  return { html };
 }
 
 // ═══ RESEÑAS ═══════════════════════════════════════════════════════════════
@@ -1035,25 +915,16 @@ function downloadIssues() {
 // ═══ Vistas ════════════════════════════════════════════════════════════════
 const VIEWS = {
   resumen: { title: 'Resumen', kicker: 'Hoy en la tienda', render: renderDashboard },
-  pos: { title: 'Punto de venta', kicker: 'Ventas de mostrador', render: renderPos },
   inventario: { title: 'Inventario', kicker: 'Existencias por tamaño', render: renderInventory },
   productos: { title: 'Productos', kicker: 'Catálogo', render: renderProducts },
   compras: { title: 'Compras', kicker: 'Reposición con proveedores', render: renderPurchases },
-  pedidos: { title: 'Pedidos', kicker: 'Online y mostrador', render: renderOrders },
   resenas: { title: 'Reseñas', kicker: 'Lo que dicen los clientes', render: renderReviewsAdmin },
   movimientos: { title: 'Movimientos', kicker: 'Libro de entradas y salidas', render: renderMovements },
   woocommerce: { title: 'WooCommerce', kicker: 'Conexión con tu tienda actual', render: renderWoo },
+  ...kit.views,
 };
 
 // ═══ Acciones (delegación de eventos) ══════════════════════════════════════
-const attempt = async (fn) => {
-  try {
-    await fn();
-  } catch (e) {
-    if (!(e instanceof ApiError && e.status === 401)) toast(e.message, 'error');
-  }
-};
-
 const ACTIONS = {
   reload: () => show(state.view),
   'goto-alerts': () => { Object.assign(state.inv, { filter: 'bajo', page: 1, q: '' }); location.hash = '#inventario'; },
@@ -1061,6 +932,11 @@ const ACTIONS = {
   adjust: (el) => attempt(() => adjustDialog(Number(el.dataset.id))),
   history: (el) => attempt(() => historyDialog(Number(el.dataset.id))),
   'edit-variant': (el) => attempt(() => editVariantDialog(Number(el.dataset.id))),
+  'print-label': (el) => attempt(async () => {
+    const v = await getVariant(Number(el.dataset.id));
+    const copies = Math.max(1, Math.min(100, Number($('#label-copies')?.value) || 1));
+    showLabelsNow([{ name: v.name, size_ml: v.size_ml, price: v.price, code: v.barcode || v.sku, copies }]);
+  }),
   import: importDialog,
   template: () => attempt(downloadTemplate),
   'new-product': () => attempt(newProductDialog),
@@ -1103,17 +979,6 @@ const ACTIONS = {
     toast('Orden cancelada.');
     show(state.view, { silent: true });
   }),
-  deliver: (el) => attempt(async () => {
-    await api(`/api/admin/orders/${el.dataset.id}/status`, { method: 'POST', body: { status: 'entregado' } });
-    toast(`Pedido #${el.dataset.id} marcado como entregado.`);
-    show(state.view, { silent: true });
-  }),
-  'cancel-order': (el) => attempt(async () => {
-    if (!confirm(`¿Cancelar el pedido #${el.dataset.id}? El stock volverá al inventario.`)) return;
-    await api(`/api/admin/orders/${el.dataset.id}/status`, { method: 'POST', body: { status: 'cancelado' } });
-    toast(`Pedido #${el.dataset.id} cancelado: el stock volvió al inventario.`);
-    show(state.view, { silent: true });
-  }),
   'woo-test': () => attempt(async () => {
     const r = await api('/api/admin/woo/test', { method: 'POST', body: {} });
     toast(`Conexión correcta: ${num(r.products)} productos en WooCommerce.`);
@@ -1144,12 +1009,7 @@ const ACTIONS = {
     show('woocommerce', { silent: true });
   }),
   'woo-issues-csv': downloadIssues,
-  'pos-add': (el) => posAdd(state.pos.results.find((v) => v.id === Number(el.dataset.id))),
-  'pos-inc': (el) => posAdd(state.pos.lines.find((l) => l.id === Number(el.dataset.id))?.v),
-  'pos-dec': (el) => { const l = state.pos.lines.find((x) => x.id === Number(el.dataset.id)); if (l && l.qty > 1) l.qty -= 1; drawPosList(); drawTicket(); },
-  'pos-del': (el) => { state.pos.lines = state.pos.lines.filter((x) => x.id !== Number(el.dataset.id)); drawPosList(); drawTicket(); },
-  'pos-clear': () => { state.pos.lines = []; drawPosList(); drawTicket(); },
-  'pos-pay': () => posPay(),
+  ...kit.actions,
 };
 
 function bind() {
@@ -1176,11 +1036,8 @@ function bind() {
   document.addEventListener('input', (e) => {
     if (e.target.id === 'inv-q') { Object.assign(state.inv, { q: e.target.value, page: 1 }); reloadInvSoon(); }
     if (e.target.id === 'prod-q') { Object.assign(state.prod, { q: e.target.value, page: 1 }); reloadProductsSoon(); }
-    if (e.target.id === 'pos-q') { state.pos.q = e.target.value; searchPosSoon(); }
-    if (e.target.id === 'pos-customer') state.pos.customer = e.target.value;
   });
   document.addEventListener('change', (e) => {
-    if (e.target.name === 'pos-pay') state.pos.pay = e.target.value;
     if (e.target.id === 'woo-file' && e.target.files[0]) attempt(() => wooAnalyze(e.target.files[0]));
     if (e.target.id === 'woo-stock') state.woo.updateStock = e.target.checked;
     if (e.target.id === 'prod-cat') { Object.assign(state.prod, { category: e.target.value, page: 1 }); reloadProducts(); }
@@ -1192,59 +1049,26 @@ function bind() {
       });
     }
   });
-  // Escáner de códigos: pega el SKU y termina con Enter.
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter' || e.target.id !== 'pos-q') return;
-    e.preventDefault();
-    const input = e.target;
-    const q = state.pos.q.trim();
-    if (!q) return;
-    attempt(async () => {
-      const r = await api(`/api/admin/inventory?${qs({ sellable: 1, limit: 10, q })}`);
-      const exact = r.rows.find((v) => v.sku.toLowerCase() === q.toLowerCase());
-      const pick = exact || (r.rows.length === 1 ? r.rows[0] : null);
-      if (!pick) return toast(r.rows.length ? 'Hay varias coincidencias: elige una de la lista.' : 'No hay coincidencias.', 'error');
-      posAdd(pick);
-      state.pos.q = '';
-      input.value = '';
-      searchPos();
-    });
-  });
 
-  $('#modal-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!modalSubmit) return closeModal();
-    const form = e.target;
-    if (!form.reportValidity()) return;
-    const btn = $('#modal-submit');
-    btn.disabled = true;
-    $('#modal-err').innerHTML = '';
-    try {
-      await modalSubmit(form);
-      closeModal();
-    } catch (err) {
-      showModalError(err);
-    } finally {
-      btn.disabled = false;
-    }
-  });
-  $('#modal').addEventListener('mousedown', (e) => { if (e.target.id === 'modal') closeModal(); });
+  bindModal();
 
   $('#login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
-      const { token } = await api('/api/login', { method: 'POST', body: { password: $('#login-pw').value } });
+      const { token } = await api('/api/login', { method: 'POST', body: { username: $('#login-user').value.trim() || 'admin', password: $('#login-pw').value } });
       setToken(token);
       await enter();
     } catch (err) {
       $('#login-err').textContent = err.message;
     }
   });
-  $('#btn-logout').addEventListener('click', () => { setToken(null); showLogin(); });
+  $('#btn-logout').addEventListener('click', () => { setToken(null); kit.user = null; showLogin(); });
+  $('#btn-account').addEventListener('click', () => ACTIONS['my-account']?.());
+  $('#btn-policy').addEventListener('click', () => ACTIONS.policy?.());
   $('#btn-reset').addEventListener('click', () => attempt(async () => {
-    if (!confirm('Esto borra todas las ventas, compras y movimientos y vuelve a cargar los datos de ejemplo. ¿Continuar?')) return;
+    if (!confirm('Esto borra todas las ventas, compras y movimientos y vuelve a cargar los datos de ejemplo. Los usuarios del panel se conservan. ¿Continuar?')) return;
     await api('/api/admin/reset', { method: 'POST', body: {} });
-    state.pos.lines = [];
+    kit.onReset?.();
     Object.assign(state.inv, { q: '', filter: 'todos', page: 1 });
     Object.assign(state.prod, { q: '', category: '', status: '', page: 1 });
     toast('Demo reiniciada con los datos de ejemplo.');
@@ -1258,7 +1082,7 @@ function bind() {
     toast('Generando el catálogo de prueba…');
     try {
       const r = await api('/api/admin/seed-large', { method: 'POST', body: {} });
-      state.pos.lines = [];
+      kit.onReset?.();
       Object.assign(state.inv, { q: '', filter: 'todos', page: 1 });
       Object.assign(state.prod, { q: '', category: '', status: '', page: 1 });
       toast(`Listo: ${num(r.products)} productos y ${num(r.variants)} variantes.`);
@@ -1273,7 +1097,7 @@ function bind() {
 
   // Refresco silencioso: ideal para ver una compra de la tienda aparecer en vivo.
   setInterval(() => {
-    if (document.hidden || $('#app').hidden || !['resumen', 'movimientos', 'pedidos'].includes(state.view)) return;
+    if (document.hidden || $('#app').hidden || !['resumen', 'movimientos', 'pedidos', 'avisos'].includes(state.view)) return;
     if ($('dialog[open]') || /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName)) return;
     show(state.view, { silent: true });
   }, 8000);
@@ -1282,7 +1106,6 @@ function bind() {
 // ─── Inicio ────────────────────────────────────────────────────────────────
 async function boot() {
   mountThemeSwitch();
-  buildNav();
   bind();
   if (!hasToken()) return showLogin();
   try {

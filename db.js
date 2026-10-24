@@ -37,6 +37,36 @@ const PRODUCT_COLUMNS = `
   created_at  TEXT NOT NULL DEFAULT (${LOCAL_NOW})
 `;
 
+
+// Columnas de la tabla de pedidos (se reutilizan al reconstruir una base antigua: SQLite no permite cambiar un CHECK).
+// total = lo que vale la venta (subtotal − descuento). gift_amount es la parte pagada con una tarjeta de regalo.
+const ORDERS_COLUMNS = `
+  id             INTEGER PRIMARY KEY,
+  channel        TEXT NOT NULL CHECK (channel IN ('online','mostrador')),
+  customer_name  TEXT NOT NULL,
+  customer_email TEXT,
+  customer_phone TEXT,
+  delivery       TEXT,
+  address        TEXT,
+  payment_method TEXT NOT NULL,
+  status         TEXT NOT NULL DEFAULT 'pagado' CHECK (status IN ('pendiente_pago','pagado','entregado','cancelado')),
+  subtotal       REAL NOT NULL DEFAULT 0,
+  discount       REAL NOT NULL DEFAULT 0,
+  total          REAL NOT NULL DEFAULT 0,
+  gift_code      TEXT,
+  gift_amount    REAL NOT NULL DEFAULT 0,
+  coupon_code    TEXT,
+  promo_label    TEXT,
+  refunded       REAL NOT NULL DEFAULT 0,        -- suma de las devoluciones ya hechas
+  customer_id    INTEGER,                        -- cuenta de cliente (si compró con sesión iniciada)
+  user_id        INTEGER,                        -- quién cobró (mostrador)
+  user_name      TEXT,
+  shift_id       INTEGER,                        -- turno de caja en el que se cobró
+  tracking_code  TEXT,                           -- código para seguir el pedido sin iniciar sesión
+  notify_opt_in  INTEGER NOT NULL DEFAULT 0,     -- el cliente aceptó avisos por WhatsApp
+  created_at     TEXT NOT NULL DEFAULT (${LOCAL_NOW})
+`;
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
@@ -67,7 +97,9 @@ CREATE TABLE IF NOT EXISTS variants (
   reorder_qty INTEGER NOT NULL DEFAULT 12,
   supplier_id INTEGER REFERENCES suppliers(id),
   external_id TEXT,
-  active      INTEGER NOT NULL DEFAULT 1
+  active      INTEGER NOT NULL DEFAULT 1,
+  barcode     TEXT,                                 -- código de barras (EAN/UPC) que lee el escáner del mostrador
+  is_set      INTEGER NOT NULL DEFAULT 0            -- 1 = set de regalo: su stock sale de los productos que incluye (bundle_items)
 );
 
 CREATE INDEX IF NOT EXISTS idx_products_cat ON products(active, category);
@@ -77,6 +109,7 @@ CREATE INDEX IF NOT EXISTS idx_products_sold ON products(sold DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_products_external ON products(external_id) WHERE external_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_variants_product ON variants(product_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_variants_external ON variants(external_id) WHERE external_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_variants_barcode ON variants(barcode) WHERE barcode IS NOT NULL;
 
 -- Libro de movimientos: el stock de una variante es la suma de sus movimientos.
 CREATE TABLE IF NOT EXISTS stock_movements (
@@ -88,23 +121,12 @@ CREATE TABLE IF NOT EXISTS stock_movements (
   ref_type   TEXT,
   ref_id     INTEGER,
   balance    INTEGER,
+  user_name  TEXT,                                  -- quién hizo el ajuste manual (las ventas y compras se ligan por su pedido)
   created_at TEXT NOT NULL DEFAULT (${LOCAL_NOW})
 );
 CREATE INDEX IF NOT EXISTS idx_mov_variant ON stock_movements(variant_id, id);
 
-CREATE TABLE IF NOT EXISTS orders (
-  id             INTEGER PRIMARY KEY,
-  channel        TEXT NOT NULL CHECK (channel IN ('online','mostrador')),
-  customer_name  TEXT NOT NULL,
-  customer_email TEXT,
-  customer_phone TEXT,
-  delivery       TEXT,
-  address        TEXT,
-  payment_method TEXT NOT NULL,
-  status         TEXT NOT NULL DEFAULT 'pagado' CHECK (status IN ('pagado','entregado','cancelado')),
-  total          REAL NOT NULL DEFAULT 0,
-  created_at     TEXT NOT NULL DEFAULT (${LOCAL_NOW})
-);
+CREATE TABLE IF NOT EXISTS orders (${ORDERS_COLUMNS});
 
 CREATE TABLE IF NOT EXISTS order_items (
   id         INTEGER PRIMARY KEY,
@@ -112,9 +134,15 @@ CREATE TABLE IF NOT EXISTS order_items (
   variant_id INTEGER NOT NULL REFERENCES variants(id),
   qty        INTEGER NOT NULL CHECK (qty > 0),
   unit_price REAL NOT NULL,
-  unit_cost  REAL NOT NULL DEFAULT 0
+  unit_cost  REAL NOT NULL DEFAULT 0,
+  returned_qty INTEGER NOT NULL DEFAULT 0,          -- unidades ya devueltas por el cliente
+  bundle_variant_id INTEGER,                        -- si la línea viene de un set de regalo: la variante del set
+  bundle_units INTEGER                              -- cuántos sets se vendieron en ese pedido
 );
 CREATE INDEX IF NOT EXISTS idx_items_order ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_tracking ON orders(tracking_code) WHERE tracking_code IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id) WHERE customer_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS purchases (
   id          INTEGER PRIMARY KEY,
@@ -176,7 +204,7 @@ AFTER UPDATE OF status ON orders
 WHEN NEW.status = 'cancelado' AND OLD.status <> 'cancelado'
 BEGIN
   UPDATE products
-     SET sold = MAX(0, sold - COALESCE((SELECT SUM(oi.qty) FROM order_items oi JOIN variants v ON v.id = oi.variant_id
+     SET sold = MAX(0, sold - COALESCE((SELECT SUM(oi.qty - oi.returned_qty) FROM order_items oi JOIN variants v ON v.id = oi.variant_id
                                          WHERE oi.order_id = NEW.id AND v.product_id = products.id), 0))
    WHERE id IN (SELECT v.product_id FROM order_items oi JOIN variants v ON v.id = oi.variant_id WHERE oi.order_id = NEW.id);
 END;
@@ -187,8 +215,8 @@ AFTER UPDATE OF status ON orders
 WHEN NEW.status = 'cancelado' AND OLD.status <> 'cancelado'
 BEGIN
   INSERT INTO stock_movements (variant_id, type, qty, reason, ref_type, ref_id)
-  SELECT variant_id, 'entrada', qty, 'Cancelación del pedido #' || NEW.id, 'order', NEW.id
-    FROM order_items WHERE order_id = NEW.id;
+  SELECT variant_id, 'entrada', qty - returned_qty, 'Cancelación del pedido #' || NEW.id, 'order', NEW.id
+    FROM order_items WHERE order_id = NEW.id AND qty - returned_qty > 0;
 END;
 
 -- Recibir una compra => entrada de stock + costo actualizado.
@@ -245,6 +273,285 @@ CREATE TABLE IF NOT EXISTS reviews (
 );
 CREATE INDEX IF NOT EXISTS idx_reviews_product ON reviews (product_id, created_at DESC, id DESC);
 
+-- ─── Personal, bitácora y clientes ─────────────────────────────────────────
+-- Usuarios del panel (ver auth.js). La clave se guarda con scrypt, nunca en claro.
+CREATE TABLE IF NOT EXISTS users (
+  id         INTEGER PRIMARY KEY,
+  username   TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  name       TEXT NOT NULL,
+  role       TEXT NOT NULL CHECK (role IN ('admin','gerente','cajero','inventario')),
+  pass_hash  TEXT NOT NULL,
+  active     INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (${LOCAL_NOW}),
+  last_login TEXT
+);
+
+-- Bitácora: quién hizo qué y cuándo (se escribe desde la API; nunca guarda claves).
+CREATE TABLE IF NOT EXISTS audit_log (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER,
+  user_name  TEXT NOT NULL DEFAULT '',
+  action     TEXT NOT NULL,
+  entity     TEXT NOT NULL DEFAULT '',
+  entity_id  TEXT NOT NULL DEFAULT '',
+  detail     TEXT NOT NULL DEFAULT '',
+  ip         TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (${LOCAL_NOW})
+);
+CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action, id DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id, id DESC);
+
+-- Cuentas de clientes de la tienda (ver accounts.js).
+CREATE TABLE IF NOT EXISTS customers (
+  id            INTEGER PRIMARY KEY,
+  name          TEXT NOT NULL,
+  email         TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  phone         TEXT NOT NULL DEFAULT '',
+  pass_hash     TEXT NOT NULL,
+  notify_opt_in INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL DEFAULT (${LOCAL_NOW}),
+  last_login    TEXT
+);
+CREATE TABLE IF NOT EXISTS customer_favorites (
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  product_id  INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  created_at  TEXT NOT NULL DEFAULT (${LOCAL_NOW}),
+  PRIMARY KEY (customer_id, product_id)
+);
+
+-- ─── Caja y devoluciones ───────────────────────────────────────────────────
+-- Un turno de caja por cajero: se abre con un fondo y se cierra contando el efectivo (ver shifts.js).
+CREATE TABLE IF NOT EXISTS cash_shifts (
+  id            INTEGER PRIMARY KEY,
+  user_id       INTEGER NOT NULL,
+  user_name     TEXT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'abierto' CHECK (status IN ('abierto','cerrado')),
+  opening_cash  REAL NOT NULL DEFAULT 0,
+  opened_at     TEXT NOT NULL DEFAULT (${LOCAL_NOW}),
+  closed_at     TEXT,
+  expected_cash REAL,
+  counted_cash  REAL,
+  difference    REAL,
+  notes         TEXT NOT NULL DEFAULT '',
+  summary       TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_shift_open ON cash_shifts(user_id) WHERE status = 'abierto';
+CREATE TABLE IF NOT EXISTS cash_movements (
+  id         INTEGER PRIMARY KEY,
+  shift_id   INTEGER NOT NULL REFERENCES cash_shifts(id),
+  kind       TEXT NOT NULL CHECK (kind IN ('ingreso','retiro')),
+  amount     REAL NOT NULL CHECK (amount > 0),
+  reason     TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (${LOCAL_NOW})
+);
+
+CREATE TABLE IF NOT EXISTS returns (
+  id            INTEGER PRIMARY KEY,
+  order_id      INTEGER NOT NULL REFERENCES orders(id),
+  user_id       INTEGER,
+  user_name     TEXT NOT NULL DEFAULT '',
+  shift_id      INTEGER,
+  reason        TEXT NOT NULL,
+  refund_method TEXT NOT NULL CHECK (refund_method IN ('efectivo','metodo_original','nota_credito')),
+  amount        REAL NOT NULL,
+  credit_code   TEXT,
+  created_at    TEXT NOT NULL DEFAULT (${LOCAL_NOW})
+);
+CREATE INDEX IF NOT EXISTS idx_returns_order ON returns(order_id);
+CREATE TABLE IF NOT EXISTS return_items (
+  id            INTEGER PRIMARY KEY,
+  return_id     INTEGER NOT NULL REFERENCES returns(id) ON DELETE CASCADE,
+  order_item_id INTEGER NOT NULL REFERENCES order_items(id),
+  variant_id    INTEGER NOT NULL,
+  qty           INTEGER NOT NULL CHECK (qty > 0),
+  unit_refund   REAL NOT NULL,
+  unit_cost     REAL NOT NULL DEFAULT 0,
+  restock       INTEGER NOT NULL DEFAULT 1
+);
+
+-- ─── Ofertas, tarjetas de regalo y sets ────────────────────────────────────
+-- Una promoción con código es un cupón; sin código se aplica sola en la bolsa (ver pricing.js).
+CREATE TABLE IF NOT EXISTS promotions (
+  id           INTEGER PRIMARY KEY,
+  name         TEXT NOT NULL,
+  code         TEXT UNIQUE COLLATE NOCASE,
+  kind         TEXT NOT NULL CHECK (kind IN ('percent','fixed','bundle')),
+  amount       REAL NOT NULL DEFAULT 0,
+  buy_qty      INTEGER NOT NULL DEFAULT 0,
+  scope        TEXT NOT NULL DEFAULT 'todo' CHECK (scope IN ('todo','marca','categoria','tipo')),
+  scope_value  TEXT NOT NULL DEFAULT '',
+  min_total    REAL NOT NULL DEFAULT 0,
+  skip_sale    INTEGER NOT NULL DEFAULT 1,
+  channel      TEXT NOT NULL DEFAULT 'ambos' CHECK (channel IN ('ambos','online','mostrador')),
+  starts_at    TEXT,
+  ends_at      TEXT,
+  max_uses     INTEGER,
+  uses         INTEGER NOT NULL DEFAULT 0,
+  per_customer INTEGER NOT NULL DEFAULT 0,
+  featured     INTEGER NOT NULL DEFAULT 0,   -- 1 = el código se anuncia en la tienda (los demás cupones son secretos)
+  active       INTEGER NOT NULL DEFAULT 1,
+  created_at   TEXT NOT NULL DEFAULT (${LOCAL_NOW})
+);
+
+CREATE TABLE IF NOT EXISTS gift_cards (
+  id              INTEGER PRIMARY KEY,
+  code            TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  initial_amount  REAL NOT NULL CHECK (initial_amount > 0),
+  balance         REAL NOT NULL CHECK (balance >= 0),
+  status          TEXT NOT NULL DEFAULT 'activa' CHECK (status IN ('pendiente','activa','anulada')),
+  source          TEXT NOT NULL DEFAULT 'venta' CHECK (source IN ('venta','nota_credito','manual')),
+  buyer_name      TEXT NOT NULL DEFAULT '',
+  buyer_email     TEXT,
+  buyer_phone     TEXT,
+  recipient_name  TEXT NOT NULL DEFAULT '',
+  recipient_email TEXT,
+  recipient_phone TEXT,
+  message         TEXT NOT NULL DEFAULT '',
+  payment_method  TEXT,
+  user_id         INTEGER,
+  shift_id        INTEGER,
+  expires_at      TEXT,
+  created_at      TEXT NOT NULL DEFAULT (${LOCAL_NOW})
+);
+CREATE TABLE IF NOT EXISTS gift_card_uses (
+  id           INTEGER PRIMARY KEY,
+  gift_card_id INTEGER NOT NULL REFERENCES gift_cards(id),
+  order_id     INTEGER,
+  kind         TEXT NOT NULL CHECK (kind IN ('canje','reverso','ajuste')),
+  amount       REAL NOT NULL,
+  created_at   TEXT NOT NULL DEFAULT (${LOCAL_NOW})
+);
+
+-- Qué incluye cada set de regalo. El set es una variante más (is_set = 1) y su stock sale de estas filas.
+CREATE TABLE IF NOT EXISTS bundle_items (
+  bundle_variant_id    INTEGER NOT NULL REFERENCES variants(id) ON DELETE CASCADE,
+  component_variant_id INTEGER NOT NULL REFERENCES variants(id),
+  qty                  INTEGER NOT NULL CHECK (qty > 0),
+  PRIMARY KEY (bundle_variant_id, component_variant_id)
+);
+CREATE INDEX IF NOT EXISTS idx_bundle_component ON bundle_items(component_variant_id);
+
+-- ─── Seguimiento, avisos y archivos ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS order_events (
+  id         INTEGER PRIMARY KEY,
+  order_id   INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL,
+  note       TEXT NOT NULL DEFAULT '',
+  user_name  TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (${LOCAL_NOW})
+);
+CREATE INDEX IF NOT EXISTS idx_events_order ON order_events(order_id, id);
+
+-- «Avísame cuando llegue»: quien pidió que le avisen cuando vuelva un producto agotado.
+CREATE TABLE IF NOT EXISTS stock_alerts (
+  id          INTEGER PRIMARY KEY,
+  product_id  INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  variant_id  INTEGER REFERENCES variants(id) ON DELETE CASCADE,
+  channel     TEXT NOT NULL CHECK (channel IN ('email','whatsapp')),
+  contact     TEXT NOT NULL,
+  name        TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL DEFAULT (${LOCAL_NOW}),
+  notified_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_alert_open ON stock_alerts(product_id, COALESCE(variant_id, 0), contact) WHERE notified_at IS NULL;
+
+-- Bandeja de salida de avisos (WhatsApp / correo). Ver notify.js.
+CREATE TABLE IF NOT EXISTS notifications (
+  id         INTEGER PRIMARY KEY,
+  channel    TEXT NOT NULL CHECK (channel IN ('whatsapp','email')),
+  to_addr    TEXT NOT NULL,
+  template   TEXT NOT NULL,
+  payload    TEXT NOT NULL DEFAULT '{}',
+  status     TEXT NOT NULL DEFAULT 'pendiente' CHECK (status IN ('pendiente','enviado','error','simulado')),
+  attempts   INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  dedupe_key TEXT UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (${LOCAL_NOW}),
+  sent_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_notif_status ON notifications(status, id);
+
+-- Fotos subidas desde el panel (ver media.js).
+CREATE TABLE IF NOT EXISTS media (
+  id         INTEGER PRIMARY KEY,
+  mime       TEXT NOT NULL,
+  bytes      BLOB NOT NULL,
+  size       INTEGER NOT NULL,
+  name       TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (${LOCAL_NOW})
+);
+
+-- Pagos con pasarela externa y facturas electrónicas (ver payments.js e invoicing.js).
+CREATE TABLE IF NOT EXISTS payment_attempts (
+  id         INTEGER PRIMARY KEY,
+  order_id   INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  provider   TEXT NOT NULL,
+  reference  TEXT NOT NULL UNIQUE,
+  amount     REAL NOT NULL,
+  status     TEXT NOT NULL DEFAULT 'pendiente' CHECK (status IN ('pendiente','pagado','fallido','vencido')),
+  created_at TEXT NOT NULL DEFAULT (${LOCAL_NOW}),
+  updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS fiscal_docs (
+  id         INTEGER PRIMARY KEY,
+  order_id   INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  return_id  INTEGER,
+  kind       TEXT NOT NULL CHECK (kind IN ('factura','nota_credito')),
+  number     TEXT,
+  auth_code  TEXT,
+  url        TEXT,
+  provider   TEXT NOT NULL,
+  status     TEXT NOT NULL CHECK (status IN ('pendiente','emitida','error','simulada')),
+  amount     REAL NOT NULL,
+  error      TEXT,
+  created_at TEXT NOT NULL DEFAULT (${LOCAL_NOW})
+);
+CREATE INDEX IF NOT EXISTS idx_fiscal_order ON fiscal_docs(order_id);
+
+-- El stock de un set es el de su componente más escaso: se recalcula solo cuando cambia el de un componente.
+CREATE TRIGGER IF NOT EXISTS trg_set_stock
+AFTER UPDATE OF stock ON variants
+WHEN NEW.stock <> OLD.stock AND EXISTS (SELECT 1 FROM bundle_items WHERE component_variant_id = NEW.id)
+BEGIN
+  UPDATE variants
+     SET stock = COALESCE((SELECT MIN(cv.stock / bi.qty) FROM bundle_items bi JOIN variants cv ON cv.id = bi.component_variant_id
+                            WHERE bi.bundle_variant_id = variants.id), 0)
+   WHERE is_set = 1 AND id IN (SELECT bundle_variant_id FROM bundle_items WHERE component_variant_id = NEW.id);
+END;
+
+-- Cuando un producto agotado vuelve a tener existencias, se avisa a quienes lo pidieron.
+CREATE TRIGGER IF NOT EXISTS trg_stock_back
+AFTER UPDATE OF stock ON variants
+WHEN OLD.stock = 0 AND NEW.stock > 0
+BEGIN
+  INSERT OR IGNORE INTO notifications (channel, to_addr, template, payload, status, dedupe_key)
+  SELECT a.channel, a.contact, 'stock_disponible',
+         json_object('alert_id', a.id, 'product_id', a.product_id, 'variant_id', NEW.id, 'name', a.name),
+         CASE COALESCE((SELECT value FROM settings WHERE key = 'notify_mode'), 'simulado') WHEN 'webhook' THEN 'pendiente' ELSE 'simulado' END,
+         'back:' || a.id
+    FROM stock_alerts a
+   WHERE a.notified_at IS NULL AND a.product_id = NEW.product_id AND (a.variant_id IS NULL OR a.variant_id = NEW.id);
+  UPDATE stock_alerts SET notified_at = ${LOCAL_NOW}
+   WHERE notified_at IS NULL AND product_id = NEW.product_id AND (variant_id IS NULL OR variant_id = NEW.id);
+END;
+
+-- Stock bajo: un aviso al encargado (una vez al día por producto) cuando una variante cruza su mínimo.
+CREATE TRIGGER IF NOT EXISTS trg_low_stock
+AFTER UPDATE OF stock ON variants
+WHEN NEW.is_set = 0 AND NEW.active = 1 AND NEW.stock <= NEW.min_stock AND OLD.stock > OLD.min_stock
+BEGIN
+  INSERT OR IGNORE INTO notifications (channel, to_addr, template, payload, status, dedupe_key)
+  SELECT 'whatsapp', s.value, 'stock_bajo', json_object('variant_id', NEW.id, 'stock', NEW.stock, 'min', NEW.min_stock),
+         CASE COALESCE((SELECT value FROM settings WHERE key = 'notify_mode'), 'simulado') WHEN 'webhook' THEN 'pendiente' ELSE 'simulado' END,
+         'low:w:' || NEW.id || ':' || date('now', 'localtime')
+    FROM settings s WHERE s.key = 'alert_whatsapp' AND s.value <> '';
+  INSERT OR IGNORE INTO notifications (channel, to_addr, template, payload, status, dedupe_key)
+  SELECT 'email', s.value, 'stock_bajo', json_object('variant_id', NEW.id, 'stock', NEW.stock, 'min', NEW.min_stock),
+         CASE COALESCE((SELECT value FROM settings WHERE key = 'notify_mode'), 'simulado') WHEN 'webhook' THEN 'pendiente' ELSE 'simulado' END,
+         'low:e:' || NEW.id || ':' || date('now', 'localtime')
+    FROM settings s WHERE s.key = 'alert_email' AND s.value <> '';
+END;
+
 CREATE TRIGGER IF NOT EXISTS trg_woo_outbox
 AFTER UPDATE OF stock ON variants
 WHEN NEW.external_id IS NOT NULL AND NEW.stock <> OLD.stock
@@ -256,7 +563,7 @@ BEGIN
 END;
 `;
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 // Convierte una base creada con versiones anteriores sin perder datos: categorías Mujer/Hombre → Damas/Caballeros,
 // columnas nuevas (tipo, ofertas, contador de vendidos, texto de búsqueda…).
@@ -289,6 +596,53 @@ function migrate(db) {
   const vcols = db.prepare('PRAGMA table_info(variants)').all().map((c) => c.name);
   if (!vcols.includes('compare_at')) db.exec('ALTER TABLE variants ADD COLUMN compare_at REAL');
   if (!vcols.includes('external_id')) db.exec('ALTER TABLE variants ADD COLUMN external_id TEXT');
+  migrateV4(db, vcols);
+}
+
+// Versión 4: usuarios, caja, devoluciones, ofertas, tarjetas de regalo, sets, avisos… Las tablas nuevas las crea SCHEMA; aquí
+// se agregan las columnas a las tablas que ya existían y se reconstruye `orders` (un CHECK no se puede cambiar en SQLite).
+function migrateV4(db, vcols) {
+  const addColumn = (table, name, ddl) => {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+    if (cols.length && !cols.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${ddl}`);
+  };
+  const version = db.prepare('PRAGMA user_version').get().user_version;
+  const ordersSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'orders'").get()?.sql || '';
+  const rebuildOrders = ordersSql && !ordersSql.includes('pendiente_pago');
+
+  // Los triggers se vuelven a crear al abrir (CREATE TRIGGER IF NOT EXISTS): hay que soltar los viejos para que tomen la
+  // definición nueva (la cancelación ya no devuelve dos veces lo devuelto) y para poder reconstruir `orders` sin que
+  // ninguno apunte a una tabla ausente.
+  if (version < 4 || rebuildOrders) {
+    for (const t of db.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger'").all()) db.exec(`DROP TRIGGER IF EXISTS "${t.name}"`);
+  }
+
+  if (!vcols.includes('barcode')) db.exec('ALTER TABLE variants ADD COLUMN barcode TEXT');
+  if (!vcols.includes('is_set')) db.exec('ALTER TABLE variants ADD COLUMN is_set INTEGER NOT NULL DEFAULT 0');
+  addColumn('stock_movements', 'user_name', 'TEXT');
+  addColumn('order_items', 'returned_qty', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn('order_items', 'bundle_variant_id', 'INTEGER');
+  addColumn('order_items', 'bundle_units', 'INTEGER');
+
+  if (rebuildOrders) {
+    db.exec('PRAGMA foreign_keys = OFF');
+    try {
+      db.exec('BEGIN');
+      db.exec(`CREATE TABLE orders_new (${ORDERS_COLUMNS})`);
+      const oldCols = new Set(db.prepare('PRAGMA table_info(orders)').all().map((c) => c.name));
+      const shared = db.prepare('PRAGMA table_info(orders_new)').all().map((c) => c.name).filter((c) => oldCols.has(c));
+      db.exec(`INSERT INTO orders_new (${shared.join(', ')}) SELECT ${shared.join(', ')} FROM orders`);
+      db.exec('UPDATE orders_new SET subtotal = total WHERE subtotal = 0'); // los pedidos anteriores no tenían descuento
+      db.exec('DROP TABLE orders');
+      db.exec('ALTER TABLE orders_new RENAME TO orders');
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    } finally {
+      db.exec('PRAGMA foreign_keys = ON');
+    }
+  }
 }
 
 export function openDb(path) {
@@ -309,8 +663,10 @@ export function openDb(path) {
   return db;
 }
 
-// Ejecuta fn dentro de una transacción; si algo falla, no queda nada a medias.
+// Ejecuta fn dentro de una transacción; si algo falla, no queda nada a medias. Si ya hay una abierta, se une a ella:
+// así una operación que usa otra (confirmar un pago que cancela un pedido) sigue siendo todo-o-nada.
 export function tx(db, fn) {
+  if (db.isTransaction) return fn();
   db.exec('BEGIN IMMEDIATE');
   try {
     const result = fn();

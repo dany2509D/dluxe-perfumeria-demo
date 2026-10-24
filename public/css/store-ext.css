@@ -1,0 +1,175 @@
+/* Tienda: favoritos, ofertas, cuenta, seguimiento, buscador guiado, tarjetas de regalo y «avísame». Usa las mismas variables que el resto. */
+
+/* ── Corazón de favoritos ─────────────────────────────── */
+.card { position: relative; }
+.fav-btn {
+  position: absolute; top: 10px; right: 10px; z-index: 2; width: 38px; height: 38px; display: grid; place-items: center;
+  border: 1px solid rgb(29 11 13 / 0.12); border-radius: 50%; background: rgb(255 255 255 / 0.9); color: #1d0b0d; cursor: pointer; padding: 0;
+  transition: transform 0.15s, background-color 0.15s;
+}
+.fav-btn:hover { background: #fff; transform: scale(1.06); }
+.fav-btn svg, .fav-inline svg { fill: transparent; stroke: currentColor; transition: fill 0.15s, stroke 0.15s; }
+.fav-btn.is-on svg, .fav-inline.is-on svg { fill: var(--red); stroke: var(--red); }
+.fav-inline { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 2px 0; background: none; border: 0; font: inherit; font-size: 14px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-muted); cursor: pointer; width: fit-content; }
+.fav-inline:hover { color: var(--fg); }
+.card-chips { right: 52px; flex-wrap: wrap; }
+.grid[data-layout='lista'] .fav-btn { left: 82px; right: auto; top: 22px; width: 34px; height: 34px; }
+.grid[data-layout='pequena'] .fav-btn { top: 6px; right: 6px; width: 32px; height: 32px; }
+.grid[data-layout='pequena'] .card-chips, .grid[data-layout='lista'] .card-chips { right: 44px; }
+.grid[data-layout='lista'] .card-chips { right: auto; max-width: 70px; }
+@media (max-width: 560px) { .grid[data-layout='lista'] .fav-btn { left: 58px; } }
+
+/* ── Barra superior: favoritos y cuenta ───────────────── */
+.nav-icon { gap: 6px; }
+.nav-icon .bag-count { min-width: 20px; height: 20px; font-size: 12px; }
+@media (max-width: 1180px) { .nav-icon .nav-lbl { display: none; } .nav-icon { padding-inline: 8px; } }
+@media (max-width: 560px) {
+  .nav-right { gap: 0; }
+  .nav-right .nav-admin { display: none; }
+  .nav-icon { padding-inline: 6px; min-width: 38px; justify-content: center; }
+  #acct-lbl { display: none; }
+}
+
+/* ── Barra de ofertas ─────────────────────────────────── */
+.offer-bar { background: var(--lemon); color: var(--olive); }
+.offer-in { max-width: 1400px; margin: 0 auto; padding: 7px var(--gutter); display: flex; align-items: center; justify-content: center; gap: 12px; }
+.offer-in p { display: flex; flex-wrap: wrap; gap: 2px 26px; justify-content: center; font-size: 13px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; text-align: center; }
+.offer-in b { font-weight: 700; }
+.offer-in .icon-btn { color: var(--olive); flex: none; }
+@media (max-width: 560px) { .offer-in p { font-size: 12px; gap: 0 14px; } .offer-in p span:nth-child(n + 3) { display: none; } }
+
+/* ── Diálogo genérico ─────────────────────────────────── */
+.xdialog { width: min(640px, calc(100vw - 24px)); }
+.xdialog.wide { width: min(980px, calc(100vw - 24px)); }
+.x-form { display: grid; gap: 16px; }
+.x-form .chk { display: flex; align-items: flex-start; gap: 10px; border: 0; padding: 0; background: none; font-size: 15px; letter-spacing: 0.02em; text-transform: none; cursor: pointer; }
+.x-form .chk input { margin-top: 3px; }
+.grid-2x { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 560px) { .grid-2x { grid-template-columns: 1fr; } }
+.x-empty { display: grid; gap: 12px; justify-items: center; text-align: center; padding: 24px 0 8px; }
+.x-or { text-align: center; }
+.x-err { margin: 0; }
+.x-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
+.x-tab { padding: 10px 16px; background: none; border: 0; border-bottom: 2px solid transparent; font-size: 16px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-muted); cursor: pointer; margin-bottom: -1px; }
+.x-tab.is-on { color: var(--fg); border-bottom-color: var(--lemon); }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.chip { min-height: 40px; padding: 6px 16px; border: 1px solid var(--line-strong); background: none; color: inherit; border-radius: var(--radius); font-weight: 600; letter-spacing: 0.04em; cursor: pointer; }
+.chip:hover { border-color: var(--fg); }
+.chip.is-active { background: var(--lemon); color: var(--olive); border-color: var(--lemon); }
+.link-btn { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.hint { padding: 12px 14px; background: var(--info-bg); color: var(--info-fg); font-size: 15px; letter-spacing: 0.02em; }
+
+/* ── Favoritos ────────────────────────────────────────── */
+.fav-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.fav-row { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.fav-row.is-out .fav-art { opacity: 0.55; }
+.fav-art { position: relative; width: 76px; height: 96px; background: var(--tile); display: block; }
+.fav-art svg { position: absolute; inset: 7% 10% 5%; width: 80%; height: 88%; }
+.fav-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.fav-name { font-size: 20px; text-decoration: none; }
+.fav-name:hover { text-decoration: underline; }
+.fav-acts { display: grid; gap: 6px; justify-items: end; }
+@media (max-width: 560px) { .fav-row { grid-template-columns: 64px minmax(0, 1fr); } .fav-art { width: 64px; height: 80px; } .fav-acts { grid-column: 1 / -1; display: flex; justify-content: flex-end; } }
+
+/* ── Cuenta ───────────────────────────────────────────── */
+.acct-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 36px; }
+@media (max-width: 760px) { .acct-grid { grid-template-columns: 1fr; gap: 28px; } }
+.acct-orders { list-style: none; margin: 0; padding: 0; display: grid; }
+.acct-orders li { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.acct-orders li > div:first-child { display: grid; gap: 2px; min-width: 0; }
+.acct-right { display: grid; gap: 6px; justify-items: end; align-content: start; }
+
+/* ── Seguimiento ──────────────────────────────────────── */
+.track-head { display: grid; gap: 6px; }
+.timeline-s { list-style: none; margin: 18px 0 8px; padding: 0; display: grid; }
+.tl-step { position: relative; display: flex; gap: 14px; padding: 0 0 18px; opacity: 0.55; }
+.tl-step:last-child { padding-bottom: 0; }
+.tl-step::before { content: ''; position: absolute; left: 10px; top: 24px; bottom: 0; width: 2px; background: var(--line-strong); }
+.tl-step:last-child::before { display: none; }
+.tl-step.is-done { opacity: 1; }
+.tl-step.is-done::before { background: var(--lemon); }
+.tl-dot { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 2px solid currentColor; display: grid; place-items: center; }
+.tl-step.is-done .tl-dot { background: var(--lemon); border-color: var(--lemon); color: var(--olive); }
+.tl-step b { display: block; font-weight: 500; }
+.track-items { list-style: none; margin: 8px 0 0; padding: 0; display: grid; }
+.track-items li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.track-totals { display: grid; gap: 4px; margin-top: 10px; }
+.track-totals p { display: flex; justify-content: space-between; }
+.track-totals .b { font-weight: 600; font-size: 20px; }
+.co-track { padding: 10px 14px; border: 1px dashed var(--line-strong); letter-spacing: 0.04em; }
+
+/* ── Buscador guiado ──────────────────────────────────── */
+.fd-progress { height: 4px; background: var(--line); margin-bottom: 14px; }
+.fd-progress i { display: block; height: 100%; background: var(--lemon); transition: width 0.25s; }
+.fd-q { margin: 6px 0 18px; }
+.fd-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.fd-opt { text-align: left; padding: 16px 18px; background: none; border: 1px solid var(--line-strong); border-radius: var(--radius); font-size: 18px; color: inherit; cursor: pointer; transition: background-color 0.12s, color 0.12s; }
+.fd-opt:hover, .fd-opt.is-on { background: var(--lemon); color: var(--olive); border-color: var(--lemon); }
+.fd-results { list-style: none; margin: 14px 0; padding: 0; display: grid; }
+.fd-card { display: grid; grid-template-columns: 30px 120px minmax(0, 1fr); gap: 16px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.fd-rank { font-size: 28px; font-weight: 500; color: var(--fg-accent); }
+.fd-art { position: relative; width: 120px; height: 150px; background: var(--tile); display: block; }
+.fd-art svg { position: absolute; inset: 7% 10% 5%; width: 80%; height: 88%; }
+.fd-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.fd-info { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.fd-info h4 a { text-decoration: none; }
+.fd-info h4 a:hover { text-decoration: underline; }
+.fd-price { font-weight: 600; }
+.fd-why { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 15px; color: var(--fg-muted); }
+.fd-why li::before { content: '✓'; margin-right: 8px; color: var(--fg-accent); }
+.fd-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+@media (max-width: 560px) { .fd-card { grid-template-columns: 90px minmax(0, 1fr); } .fd-rank { display: none; } .fd-art { width: 90px; height: 120px; } }
+.finder-line { margin-top: 14px; text-align: center; }
+
+/* ── Tarjetas de regalo ───────────────────────────────── */
+.big-check { color: var(--fg-accent); }
+.gift-card-v { border: 2px solid currentColor; padding: 22px 28px; display: grid; gap: 6px; text-align: center; width: min(380px, 100%); margin: 6px auto; }
+.gc-amount { font-size: 46px; font-weight: 500; line-height: 1.1; }
+.gc-msg { font-style: italic; }
+.gc-code { font-family: ui-monospace, Consolas, monospace; font-size: 22px; letter-spacing: 0.1em; margin-top: 6px; word-break: break-all; }
+.btn-row-x { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+/* ── «Avísame cuando llegue» ──────────────────────────── */
+.notify-slot:empty { display: none; }
+.notify-box { border: 1px solid var(--line-strong); padding: 10px 14px; }
+.notify-box summary { cursor: pointer; font-weight: 500; letter-spacing: 0.04em; }
+.notify-form { margin-top: 12px; gap: 12px; }
+.opts-inline { display: flex; flex-wrap: wrap; gap: 10px; }
+.opts-inline .opt { padding: 8px 12px; }
+.notify-done { display: flex; align-items: center; gap: 8px; margin: 0; }
+
+/* ── Bolsa y pago con ofertas ─────────────────────────── */
+.sum-row.disc strong { color: var(--fg-accent); }
+.coupon-box { border-top: 1px solid var(--line); padding-top: 10px; }
+.coupon-box summary { cursor: pointer; font-size: 14px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-muted); }
+.coupon-form { display: flex; gap: 8px; margin-top: 10px; }
+.coupon-form input { flex: 1 1 auto; text-transform: uppercase; }
+.co-promo { display: grid; gap: 6px; }
+.co-wa { margin-top: -6px; }
+.co-acct { margin-top: -6px; }
+
+/* ── Sets de regalo ───────────────────────────────────── */
+.bundle-box { display: grid; gap: 6px; padding: 12px 16px; border: 1px solid var(--line); }
+.bundle-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.bundle-list li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.bundle-list li:last-child { border-bottom: 0; }
+.bundle-list a { text-decoration: none; }
+.bundle-list a:hover { text-decoration: underline; }
+
+/* Celular: la barra superior (logo, Nosotros, favoritos, cuenta y bolsa) debe caber en 360 px */
+@media (max-width: 560px) {
+  .topbar-inner { gap: 8px; }
+  .nav-right .nav-link { padding-inline: 5px; font-size: 14px; letter-spacing: 0.02em; }
+  .nav-right .nav-icon { min-width: 34px; padding-inline: 4px; }
+  .nav-right .bag-count { min-width: 20px; height: 20px; padding-inline: 4px; }
+  .nav-bag { gap: 4px; }
+}
+
+/* Barra superior en pantallas medianas (la del diseño Limón lleva más enlaces): nada se parte en dos líneas */
+.nav-link { white-space: nowrap; }
+@media (max-width: 1500px) { #fav-btn .nav-lbl { display: none; } }
+
+/* Diseño Shop: el acento es violeta, así que el texto sobre él va en blanco */
+:root[data-theme='shop'] .offer-bar, :root[data-theme='shop'] .offer-in .icon-btn { color: #fff; }
+:root[data-theme='shop'] .chip.is-active, :root[data-theme='shop'] .fd-opt:hover, :root[data-theme='shop'] .fd-opt.is-on,
+:root[data-theme='shop'] .tl-step.is-done .tl-dot { color: #fff; }

@@ -46,6 +46,8 @@ writeFileSync(
   Content-Security-Policy: frame-ancestors 'self'
 /admin.html
   Content-Security-Policy: frame-ancestors 'self'
+/pago-demo.html
+  Content-Security-Policy: frame-ancestors 'self'
 /embed
   Content-Security-Policy: frame-ancestors ${chat}
 /embed.html

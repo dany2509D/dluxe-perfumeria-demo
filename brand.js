@@ -110,7 +110,7 @@ export const escHtml = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp
 export function renderBrandHtml(html, brand, { adminHint = '' } = {}) {
   const data = JSON.stringify(publicBrand(brand)).replace(/</g, '\\u003c');
   // adminHint: la contraseña a mostrar en el acceso al panel (solo en demostraciones), o vacío para no mostrar nada.
-  const hint = adminHint ? `<p class="muted caption">Demo: la contraseña es <strong>${escHtml(adminHint)}</strong> (se cambia con la variable ADMIN_PASSWORD).</p>` : '';
+  const hint = adminHint ? `<p class="muted caption">Demo: la contraseña es <strong>${escHtml(adminHint)}</strong> (se cambia con la variable ADMIN_PASSWORD). Usuarios de ejemplo: <strong>admin</strong>, <strong>gerente</strong>, <strong>cajero</strong> y <strong>bodega</strong>: cada uno ve solo lo que su rol permite.</p>` : '';
   return html
     .replaceAll('{{BRAND_NAME}}', escHtml(brand.name))
     .replaceAll('{{BRAND_SHORT}}', escHtml(brand.short))

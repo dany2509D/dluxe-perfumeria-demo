@@ -7,6 +7,11 @@ export const slugify = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/
 export const productHref = (p) => `#producto/${p.id}-${slugify(p.name)}`;
 
 const fmtAvg = (avg) => avg.toFixed(1).replace('.', ',');
+
+// «Este set incluye…»: las piezas de un set de regalo, cada una con su enlace.
+export const bundleHTML = (items) => `<p class="label">Este set incluye</p><ul class="bundle-list">${items
+  .map((c) => `<li><a href="#producto/${c.product_id}-${slugify(c.name)}">${c.qty > 1 ? `${c.qty} × ` : ''}${esc(c.name)}${c.size_ml ? ` · ${c.size_ml} ml` : ''}</a><span class="muted">${money(c.price)}</span></li>`)
+  .join('')}</ul>`;
 // Estrellas que se rellenan según el promedio (0 a 5), con texto para lectores de pantalla.
 export const starsHTML = (avg) =>
   `<span class="stars" style="--pct:${Math.max(0, Math.min(100, (avg / 5) * 100))}%" role="img" aria-label="${avg ? `${fmtAvg(avg)} de 5 estrellas` : 'Sin calificaciones todavía'}"></span>`;
@@ -121,11 +126,14 @@ export function createProductPage(deps) {
       <div class="pp-info">
         <p class="caption upper muted">${esc(meta)}</p>
         <h1 class="h-lg" id="pp-name" tabindex="-1">${esc(p.name)}</h1>
+        <button type="button" class="fav-inline" data-fav="${p.id}" aria-pressed="false">${icon('heart', 18)}<span>Guardar en favoritos</span></button>
         <p class="pp-rating"><span id="pp-rating-line">${ratingLine(s.rev?.summary)}</span><button type="button" class="link-btn" data-scroll="pp-reviews">Ver reseñas</button></p>
         ${chips.length ? `<p class="pp-chips">${chips.join('')}</p>` : ''}
         ${p.description ? `<p class="body-lg pp-desc">${esc(p.description)}</p>` : ''}
+        ${p.bundle ? `<div class="bundle-box">${bundleHTML(p.bundle)}</div>` : ''}
         ${p.notes ? `<p class="pd-notes"><span class="label">Notas</span><span class="pp-notes">${esc(p.notes)}</span></p>` : ''}
         <fieldset class="sizes"><legend class="label">Tamaño</legend><div class="size-list" id="pp-sizes">${sizeOptionsHTML(p, first, 'pp-size')}</div></fieldset>
+        <div class="notify-slot" id="pp-notify"></div>
         <div class="pp-buy">
           <div><p class="pp-price h" id="pp-price"></p><p class="caption" id="pp-stock" aria-live="polite"></p></div>
           <div class="stepper" role="group" aria-label="Cantidad">
@@ -194,6 +202,7 @@ export function createProductPage(deps) {
     const add = $('#pp-add');
     add.disabled = b.addDisabled;
     add.textContent = b.addLabel;
+    window.dispatchEvent(new CustomEvent('aurelia:product-state', { detail: { product: s.product, variantId: s.variantId, root } }));
   }
 
   const message = (title, text, button) => {

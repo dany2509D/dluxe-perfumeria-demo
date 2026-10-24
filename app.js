@@ -1,15 +1,23 @@
 // Servidor HTTP + API REST. Sin frameworks: solo módulos nativos de Node.
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb, HttpError, setSetting } from './db.js';
 import * as svc from './service.js';
-import { resetAndSeed, seedLarge } from './seed.js';
+import { resetAndSeed, seedLarge, upgradeDemoData } from './seed.js';
 import * as catalog from './catalog.js';
 import { loadBrand, publicBrand, renderBrandHtml } from './brand.js';
 import * as reviews from './reviews.js';
+import * as accounts from './accounts.js';
+import * as auth from './auth.js';
+import * as bundles from './bundles.js';
+import * as notify from './notify.js';
+import * as invoicing from './invoicing.js';
+import * as payments from './payments.js';
+import { registerOps } from './routes-ops.js';
+import { registerShop } from './routes-shop.js';
+import { getSetting } from './db.js';
 import { ancestors } from './frames.js';
 import { buildChat } from './chat-env.js';
 import { sanitizeMessages, sanitizeContext, friendlyError } from './chatbot.js';
@@ -31,12 +39,30 @@ const MIME = {
   '.md': 'text/markdown; charset=utf-8',
   '.csv': 'text/csv; charset=utf-8',
 };
-const TOKEN_TTL = 12 * 3600e3;
+const STAFF_TTL = 12 * 3600e3;
+const DUMMY_HASH = auth.hashPassword('sin-usuario'); // se compara contra ella cuando el usuario no existe
 
-export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, chatFactory = buildChat, chatLimits = {}, reviewLimits = {}, woo = {}, embedOrigins = process.env.EMBED_ORIGINS || '', frameOrigins = process.env.FRAME_ORIGINS || '', trustProxy = process.env.TRUST_PROXY === '1', brand: brandOverride = null } = {}) {
+export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, demoUsers = null, chatFactory = buildChat, chatLimits = {}, reviewLimits = {}, woo = {}, embedOrigins = process.env.EMBED_ORIGINS || '', frameOrigins = process.env.FRAME_ORIGINS || '', trustProxy = process.env.TRUST_PROXY === '1', brand: brandOverride = null, ...opts } = {}) {
   const brand = brandOverride ?? loadBrand();
   const db = openDb(dbPath);
-  if (seedIfEmpty && !db.prepare('SELECT 1 FROM products LIMIT 1').get()) resetAndSeed(db);
+  // Avisos (WhatsApp/correo), facturación electrónica y pagos en línea: cada uno con su proveedor, todos simulados si no se configura nada.
+  const notifyCfg = { ...notify.notifyConfigFromEnv(), ...(opts.notify || {}) };
+  const fiscalCfg = { ...invoicing.fiscalConfigFromEnv(), ...(opts.fiscal || {}) };
+  const payCfg = { ...payments.paymentConfigFromEnv(), ...(opts.payments || {}) };
+  notify.applyMode(db, notifyCfg);
+  const publicUrlEnv = String(opts.publicUrl ?? process.env.PUBLIC_URL ?? '').replace(/\/$/, '');
+  const freshDb = !db.prepare('SELECT 1 FROM products LIMIT 1').get();
+  // Las facturas de las ventas de ejemplo solo se crean con el proveedor de demostración: nunca se mandan datos de ejemplo a una integración real.
+  const seedServices = () => ({ fiscal: fiscalCfg.provider === 'demo' ? fiscalCfg : null, brand });
+  if (seedIfEmpty && freshDb) resetAndSeed(db, seedServices());
+  // Personal del panel: el administrador inicial usa la clave de ADMIN_PASSWORD; los usuarios de ejemplo (gerente, cajero,
+  // bodega) solo se crean en una demostración con datos de ejemplo.
+  auth.ensureOwner(db, password);
+  const withDemoUsers = demoUsers ?? (seedIfEmpty && freshDb);
+  if (withDemoUsers) {
+    auth.seedDemoUsers(db, password);
+    if (!freshDb) upgradeDemoData(db, { prefix: brand.skuPrefix }); // una demostración anterior recibe las ofertas, sets y tarjetas nuevos
+  }
 
   // WooCommerce (opcional): las credenciales vienen del entorno (WOO_URL, WOO_KEY, WOO_SECRET, WOO_WEBHOOK_SECRET, WOO_PUSH_STOCK).
   const { client: injectedClient, ...wooOverrides } = woo;
@@ -87,19 +113,29 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, c
   }
   const releaseChatSlot = (ip) => active.set(ip, Math.max(0, (active.get(ip) || 1) - 1));
 
-  const pwHash = createHash('sha256').update(password).digest();
-  // Sesión del panel: un token firmado con vencimiento (sin estado en el servidor). Así sigue valiendo aunque la petición
-  // la atienda otra instancia (funciones serverless) o se reinicie el servidor.
-  const sessionKey = createHash('sha256').update(`dluxe-session:${password}`).digest();
-  const sign = (exp) => createHmac('sha256', sessionKey).update(String(exp)).digest('hex');
+  // Sesiones: un token firmado con vencimiento (sin estado en el servidor). Así siguen valiendo aunque la petición la atienda
+  // otra instancia (funciones serverless) o se reinicie el servidor.
+  const sessions = auth.createSessions(password);
+  // Intentos fallidos: pocos por usuario y conexión (frena adivinar una clave) y bastantes por conexión (un local con varios
+  // cajeros comparte la misma dirección: un descuido no debe dejar a todos afuera).
+  const loginUserLimit = auth.createLimiter({ max: Number(process.env.LOGIN_MAX_FAILS || 8), windowMs: 15 * 60e3 });
+  const loginIpLimit = auth.createLimiter({ max: Number(process.env.LOGIN_IP_MAX_FAILS || 40), windowMs: 15 * 60e3 });
+  // Quién hace la petición: el personal del panel (token «s») con su rol vigente en la base de datos.
+  const staffOf = (req) => {
+    const parsed = sessions.parse(req.headers.authorization);
+    if (!parsed || parsed.kind !== 's') return null;
+    const u = auth.userById(db, parsed.id);
+    if (!u || !u.active || !sessions.valid(parsed, u.pass_hash)) return null;
+    return { id: u.id, username: u.username, name: u.name, role: u.role };
+  };
   // Detrás de un proxy de confianza (Netlify) la IP y el sitio reales vienen en cabeceras; si no, solo se mira la conexión.
   const clientIp = (req) => (trustProxy && (req.headers['x-nf-client-connection-ip'] || String(req.headers['x-forwarded-for'] || '').split(',')[0].trim())) || req.socket.remoteAddress || 'local';
   const publicOrigin = (req) => (trustProxy && req.headers['x-forwarded-host'] ? `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers['x-forwarded-host']}` : `http://${req.headers.host || 'localhost'}`);
 
   const routes = [];
-  const route = (method, pattern, handler, { admin = false, raw = false, limit = 2e6 } = {}) => {
+  const route = (method, pattern, handler, { admin = false, raw = false, limit = 2e6, perm = null } = {}) => {
     const re = new RegExp('^' + pattern.replace(/:(\w+)/g, '(?<$1>[^/]+)') + '$');
-    routes.push({ method, re, handler, admin, raw, limit });
+    routes.push({ method, pattern, re, handler, admin, raw, limit, perm });
   };
 
   // ─── Público ──────────────────────────────────────────────────────────
@@ -133,7 +169,8 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, c
     const p = catalog.getProduct(db, Number(params.id));
     if (!p) throw new HttpError(404, 'Producto no encontrado');
     const { avg, count } = reviews.summary(db, p.id);
-    return { ...p, rating: { avg, count } };
+    const bundle = bundles.publicComponents(db, p.id);
+    return { ...p, rating: { avg, count }, ...(bundle ? { bundle } : {}) };
   });
   route('GET', '/api/products/:id/related', ({ params, query }) => {
     const list = catalog.relatedProducts(db, Number(params.id), query.get('limit') || 8);
@@ -159,9 +196,42 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, c
   route('GET', '/api/brands', () => svc.listBrands(db));
   route('GET', '/api/brand', () => publicBrand(brand));
 
-  route('POST', '/api/orders', (ctx) => {
+  // Topes por conexión (en memoria): pedidos seguidos, intentos con códigos de tarjeta de regalo falsos y pedidos que reservan
+  // stock esperando un pago (si no, alguien podría agotar el inventario a punta de pedidos sin pagar).
+  const orderLimit = auth.createLimiter({ max: Number(process.env.ORDER_RATE_PER_10MIN || 60), windowMs: 10 * 60e3 });
+  const giftFails = auth.createLimiter({ max: 10, windowMs: 15 * 60e3 });
+  const pendingLimit = auth.createLimiter({ max: Number(process.env.PENDING_ORDERS_MAX || 8), windowMs: payCfg.holdMinutes * 60e3 });
+  route('POST', '/api/orders', async (ctx) => {
+    sweepPayments(ctx);
+    const svcs = services(ctx);
+    if (!orderLimit.take(ctx.ip)) throw new HttpError(429, 'Hiciste varios pedidos seguidos. Inténtalo de nuevo en unos minutos.');
+    if (String(ctx.body.gift_code ?? '').trim() && giftFails.blocked(ctx.ip)) throw new HttpError(429, 'Demasiados códigos de tarjeta de regalo incorrectos. Inténtalo de nuevo en unos minutos.');
+    const hostedCard = payments.isHosted(payCfg) && ctx.body.payment_method === 'tarjeta';
+    if (hostedCard && pendingLimit.blocked(ctx.ip)) throw new HttpError(429, 'Tienes varios pedidos esperando el pago. Completa o espera a que venzan antes de hacer otro.');
+    let order;
+    try {
+      order = svc.createOrder(db, ctx.body, { channel: 'online', customerId: customerOf(ctx)?.id ?? null, services: svcs });
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 400 && /tarjeta de regalo/i.test(e.message)) giftFails.take(ctx.ip);
+      throw e;
+    }
     ctx.status = 201;
-    return svc.createOrder(db, ctx.body, { channel: 'online' });
+    if (order.payment) {
+      pendingLimit.take(ctx.ip);
+      // Pasarela externa: el pedido ya reservó el stock; falta mandar al cliente a pagar.
+      try {
+        const { url } = await payments.startCheckout(payCfg, {
+          reference: order.payment.reference, amount: order.payment.amount, currency: brand.currency, description: `Pedido #${order.id} · ${brand.name}`,
+          customer: { name: order.customer_name, email: order.customer_email, phone: order.customer_phone }, baseUrl: svcs.baseUrl, orderCode: order.tracking_code,
+        });
+        order.payment.url = url;
+      } catch (e) {
+        console.error('[pagos] no se pudo iniciar el cobro:', String(e.message).slice(0, 200));
+        svc.failOrderPayment(db, order.id, { services: svcs, note: 'No se pudo iniciar el pago' });
+        throw new HttpError(502, 'No pudimos iniciar el pago. Inténtalo de nuevo en un momento.');
+      }
+    }
+    return order;
   });
 
   route('GET', '/api/chat/status', () => ({
@@ -171,19 +241,106 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, c
     reason: chat.enabled ? null : chat.reason || 'apagado',
   }));
 
+  // Acceso del personal. Sin usuario se entra como «admin» (así funcionaba antes, con una sola contraseña).
+  const sessionInfo = (u) => ({ id: u.id, username: u.username, name: u.name, role: u.role, role_label: auth.ROLES[u.role], perms: auth.permsOf(u.role) });
   route('POST', '/api/login', (ctx) => {
-    const given = createHash('sha256').update(String(ctx.body.password ?? '')).digest();
-    if (!timingSafeEqual(given, pwHash)) throw new HttpError(401, 'Contraseña incorrecta');
-    const exp = Date.now() + TOKEN_TTL;
-    return { token: `${exp.toString(36)}_${sign(exp)}` };
+    const username = String(ctx.body.username ?? 'admin').trim().toLowerCase().slice(0, 40) || 'admin';
+    const userKey = `${username}:${ctx.ip}`;
+    if (loginUserLimit.blocked(userKey) || loginIpLimit.blocked(ctx.ip)) {
+      const wait = Math.max(loginUserLimit.retrySeconds(userKey), loginIpLimit.retrySeconds(ctx.ip));
+      throw new HttpError(429, `Demasiados intentos. Vuelve a intentarlo en ${Math.ceil(wait / 60)} min.`);
+    }
+    const u = auth.userByName(db, username);
+    // Se verifica siempre una clave (aunque el usuario no exista) para que el tiempo de respuesta no delate usuarios.
+    const ok = auth.verifyPassword(String(ctx.body.password ?? ''), u?.pass_hash ?? DUMMY_HASH) && !!u && !!u.active;
+    if (!ok) {
+      loginUserLimit.take(userKey);
+      loginIpLimit.take(ctx.ip);
+      console.warn(`[auth] intento fallido: usuario «${username.replace(/[^\w.-]/g, '?')}»`); // solo al registro del servidor: así no escribe en la base de datos
+      throw new HttpError(401, 'Usuario o contraseña incorrectos');
+    }
+    loginUserLimit.reset(userKey);
+    auth.touchLogin(db, u.id);
+    auth.audit(db, u, { action: 'sesion.entrar', entity: 'usuario', id: u.id, ip: ctx.ip });
+    return { token: sessions.issue('s', u.id, u.pass_hash, STAFF_TTL), user: sessionInfo(u) };
   });
 
   // ─── Admin ────────────────────────────────────────────────────────────
-  const admin = (method, pattern, handler, opts = {}) => route(method, pattern, handler, { ...opts, admin: true });
+  // Cada ruta del panel declara qué permiso exige (ver auth.js): al arrancar se verifica que ninguna quede sin permiso.
+  const ROUTE_PERMS = {
+    'GET /api/admin/dashboard': 'resumen',
+    'GET /api/admin/inventory': 'inventario',
+    'GET /api/admin/inventory/counts': 'inventario',
+    'GET /api/admin/variants/:id': 'inventario',
+    'PATCH /api/admin/variants/:id': 'inventario_editar',
+    'POST /api/admin/variants/:id/adjust': 'inventario_editar',
+    'GET /api/admin/movements': 'movimientos',
+    'POST /api/admin/import': 'inventario_editar',
+    'GET /api/admin/products': 'productos',
+    'POST /api/admin/products': 'productos',
+    'PATCH /api/admin/products/:id': 'productos',
+    'POST /api/admin/pos/orders': 'pos',
+    'GET /api/admin/reviews': 'resenas',
+    'DELETE /api/admin/reviews/:id': 'resenas',
+    'GET /api/admin/orders': 'pedidos',
+    'POST /api/admin/orders/:id/status': 'pedidos',
+    'GET /api/admin/suppliers': ['compras', 'inventario'],
+    'GET /api/admin/purchases': 'compras',
+    'POST /api/admin/purchases': 'compras',
+    'POST /api/admin/purchases/auto': 'compras',
+    'POST /api/admin/purchases/:id/status': 'compras',
+    'GET /api/admin/settings': ['compras', 'resumen'],
+    'PATCH /api/admin/settings': 'compras',
+    'POST /api/admin/reset': 'ajustes',
+    'POST /api/admin/seed-large': 'ajustes',
+    'POST /api/admin/woo/preview': 'woocommerce',
+    'POST /api/admin/woo/import': 'woocommerce',
+    'GET /api/admin/woo/status': 'woocommerce',
+    'POST /api/admin/woo/test': 'woocommerce',
+    'POST /api/admin/woo/sync': 'woocommerce',
+    'POST /api/admin/woo/flush': 'woocommerce',
+  };
+  const admin = (method, pattern, handler, opts = {}) => route(method, pattern, handler, { ...opts, admin: true, perm: opts.perm ?? ROUTE_PERMS[`${method} ${pattern}`] ?? null });
+  // Quien no ve costos no debe recibirlos aunque llame a la API directamente.
+  const redactCosts = (user, row) => {
+    if (auth.can(user, 'costos')) return row;
+    const { cost, supplier_id, supplier_name, reorder_qty, ...rest } = row;
+    return rest;
+  };
+
+  admin('GET', '/api/admin/me', (c) => sessionInfo(auth.userById(db, c.user.id)), { perm: [] });
+  admin('POST', '/api/admin/me/password', (c) => {
+    auth.changeOwnPassword(db, c.user.id, c.body.current, c.body.next);
+    c.log('usuario.clave_propia', 'usuario', c.user.id);
+    const u = auth.userById(db, c.user.id);
+    return { ok: true, token: sessions.issue('s', u.id, u.pass_hash, STAFF_TTL) }; // la clave nueva cierra las demás sesiones
+  }, { perm: [] });
+  admin('GET', '/api/admin/badges', () => {
+    const inv = svc.inventoryCounts(db);
+    return { inventory: inv.out_count + inv.low_count, purchases: db.prepare("SELECT COUNT(*) AS n FROM purchases WHERE status = 'pendiente'").get().n };
+  }, { perm: [] });
+
+  admin('GET', '/api/admin/users', () => ({ users: auth.listUsers(db), roles: auth.ROLES }), { perm: 'usuarios' });
+  admin('POST', '/api/admin/users', (c) => {
+    c.status = 201;
+    const u = auth.createUser(db, c.body);
+    c.log('usuario.crear', 'usuario', u.id, `${u.username} · ${u.role}`);
+    return u;
+  }, { perm: 'usuarios' });
+  admin('PATCH', '/api/admin/users/:id', (c) => {
+    const r = auth.updateUser(db, Number(c.params.id), c.body, { actorId: c.user.id });
+    c.log('usuario.editar', 'usuario', r.user.id, `${r.user.username}: ${r.changes.join(', ') || 'datos'}`);
+    return r.user;
+  }, { perm: 'usuarios' });
+  admin('GET', '/api/admin/audit', ({ query }) =>
+    auth.listAudit(db, { action: query.get('action') || '', userId: query.get('user_id'), q: query.get('q') || '', from: query.get('from') || '', to: query.get('to') || '', page: query.get('page') || 1, limit: query.get('limit') || 50 }),
+    { perm: 'bitacora' }
+  );
 
   admin('GET', '/api/admin/dashboard', () => svc.dashboard(db));
-  admin('GET', '/api/admin/inventory', ({ query }) =>
-    svc.listInventory(db, {
+  admin('GET', '/api/admin/inventory', (c) => {
+    const { query } = c;
+    const out = svc.listInventory(db, {
       q: query.get('q') || '',
       filter: query.get('filter') || 'todos',
       category: query.get('category') || '',
@@ -193,12 +350,24 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, c
       page: query.get('page') || 1,
       limit: query.get('limit') || 50,
       sellable: query.get('sellable') === '1',
-    })
-  );
+    });
+    out.rows = out.rows.map((r) => redactCosts(c.user, r));
+    return out;
+  });
   admin('GET', '/api/admin/inventory/counts', () => svc.inventoryCounts(db));
-  admin('GET', '/api/admin/variants/:id', (c) => svc.getInventoryRow(db, Number(c.params.id)));
-  admin('PATCH', '/api/admin/variants/:id', (c) => svc.updateVariant(db, Number(c.params.id), c.body));
-  admin('POST', '/api/admin/variants/:id/adjust', (c) => svc.adjustStock(db, Number(c.params.id), c.body));
+  admin('GET', '/api/admin/variants/:id', (c) => redactCosts(c.user, svc.getInventoryRow(db, Number(c.params.id))));
+  admin('PATCH', '/api/admin/variants/:id', (c) => {
+    const before = db.prepare('SELECT price, compare_at, cost, min_stock, active FROM variants WHERE id = ?').get(Number(c.params.id));
+    const r = svc.updateVariant(db, Number(c.params.id), c.body);
+    const changed = before ? Object.keys(c.body).filter((k) => k in before && String(before[k]) !== String(c.body[k])).map((k) => `${k} ${before[k] ?? '—'} → ${c.body[k] ?? '—'}`) : [];
+    c.log('inventario.editar', 'variante', c.params.id, changed.join(', ') || 'sin cambios de valor');
+    return r;
+  });
+  admin('POST', '/api/admin/variants/:id/adjust', (c) => {
+    const r = svc.adjustStock(db, Number(c.params.id), { ...c.body, actor: c.user });
+    c.log('inventario.ajuste', 'variante', c.params.id, `${r.delta > 0 ? '+' : ''}${r.delta} → ${r.stock} · ${String(c.body.reason ?? '').slice(0, 80)}`);
+    return r;
+  });
   admin('GET', '/api/admin/movements', ({ query }) =>
     svc.listMovements(db, {
       variantId: Number(query.get('variant_id')) || null,
@@ -206,7 +375,11 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, c
       limit: query.get('limit') || 150,
     })
   );
-  admin('POST', '/api/admin/import', (c) => svc.importCsv(db, c.body.csv));
+  admin('POST', '/api/admin/import', (c) => {
+    const r = svc.importCsv(db, c.body.csv, { actor: c.user });
+    c.log('inventario.importar', 'inventario', '', `${r.applied} filas · ${r.units} unidades`);
+    return r;
+  });
 
   admin('GET', '/api/admin/products', ({ query }) =>
     svc.listProductsAdmin(db, {
@@ -221,47 +394,84 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, c
   );
   admin('POST', '/api/admin/products', (c) => {
     c.status = 201;
-    return svc.createProduct(db, c.body, { skuPrefix: brand.skuPrefix });
+    const r = svc.createProduct(db, c.body, { skuPrefix: brand.skuPrefix, actor: c.user });
+    c.log('producto.crear', 'producto', r.id, String(c.body.name ?? '').slice(0, 80));
+    return r;
   });
-  admin('PATCH', '/api/admin/products/:id', (c) => svc.updateProduct(db, Number(c.params.id), c.body));
+  admin('PATCH', '/api/admin/products/:id', (c) => {
+    const r = svc.updateProduct(db, Number(c.params.id), c.body);
+    c.log('producto.editar', 'producto', c.params.id, Object.keys(c.body).filter((k) => k !== 'description').join(', ') + ('description' in c.body ? ', descripción' : ''));
+    return r;
+  });
 
   admin('POST', '/api/admin/pos/orders', (c) => {
     c.status = 201;
-    return svc.createOrder(db, c.body, { channel: 'mostrador' });
+    // Descuento manual: el cajero hasta el tope que fija el gerente; gerente y administrador, sin tope.
+    const cap = auth.can(c.user, 'descuento_libre') ? 100 : auth.can(c.user, 'descuento_manual') ? Number(getSetting(db, 'max_manual_discount', '10')) : 0;
+    if (c.body.discount && cap <= 0) throw new HttpError(403, 'No tienes permiso para dar descuentos');
+    const o = svc.createOrder(db, c.body, { channel: 'mostrador', actor: c.user, services: services(c), manualCapPct: cap });
+    c.log('venta.mostrador', 'pedido', o.id, `${o.payment_method} · ${o.total}${o.discount ? ` · descuento ${o.discount}${o.promo_label ? ` (${o.promo_label})` : ''}` : ''}`);
+    return o;
   });
   admin('GET', '/api/admin/reviews', ({ query }) => reviews.listRecent(db, { page: query.get('page') || 1, limit: query.get('limit') || 25 }));
-  admin('DELETE', '/api/admin/reviews/:id', ({ params }) => reviews.removeReview(db, Number(params.id)));
-  admin('GET', '/api/admin/orders', () => svc.listOrders(db));
-  admin('POST', '/api/admin/orders/:id/status', (c) => svc.setOrderStatus(db, Number(c.params.id), c.body.status));
+  admin('DELETE', '/api/admin/reviews/:id', (c) => {
+    const r = reviews.removeReview(db, Number(c.params.id));
+    c.log('resena.eliminar', 'resena', c.params.id);
+    return r;
+  });
+  admin('GET', '/api/admin/orders', (c) => {
+    sweepPayments(c);
+    return svc.listOrders(db, { status: c.query.get('status') || '', q: c.query.get('q') || '', limit: c.query.get('limit') || 200 });
+  });
+  admin('POST', '/api/admin/orders/:id/status', (c) => {
+    if (c.body.status === 'cancelado' && !auth.can(c.user, 'pedidos_cancelar')) throw new HttpError(403, 'No tienes permiso para cancelar pedidos');
+    const o = svc.setOrderStatus(db, Number(c.params.id), c.body.status, { actor: c.user, services: services(c) });
+    c.log(`pedido.${c.body.status}`, 'pedido', c.params.id);
+    return o;
+  });
 
   admin('GET', '/api/admin/suppliers', () => svc.listSuppliers(db));
   admin('GET', '/api/admin/purchases', () => svc.listPurchases(db));
   admin('POST', '/api/admin/purchases', (c) => {
     c.status = 201;
-    return svc.createPurchase(db, c.body);
+    const r = svc.createPurchase(db, c.body);
+    c.log('compra.crear', 'compra', r.id);
+    return r;
   });
-  admin('POST', '/api/admin/purchases/auto', () => {
+  admin('POST', '/api/admin/purchases/auto', (c) => {
     db.exec('BEGIN IMMEDIATE');
     try {
       const r = svc.autoReplenish(db, { force: true });
       db.exec('COMMIT');
+      c.log('compra.sugeridas', 'compra', '', `${r.items} productos en ${r.purchases} órdenes`);
       return r;
     } catch (e) {
       db.exec('ROLLBACK');
       throw e;
     }
   });
-  admin('POST', '/api/admin/purchases/:id/status', (c) => svc.setPurchaseStatus(db, Number(c.params.id), c.body.status));
+  admin('POST', '/api/admin/purchases/:id/status', (c) => {
+    const r = svc.setPurchaseStatus(db, Number(c.params.id), c.body.status, { actor: c.user });
+    c.log(`compra.${c.body.status}`, 'compra', c.params.id);
+    return r;
+  });
 
   admin('GET', '/api/admin/settings', () => svc.getSettings(db));
-  admin('PATCH', '/api/admin/settings', (c) => svc.updateSettings(db, c.body));
-  admin('POST', '/api/admin/reset', () => {
-    resetAndSeed(db);
+  admin('PATCH', '/api/admin/settings', (c) => {
+    const r = svc.updateSettings(db, c.body);
+    c.log('ajustes.editar', 'ajustes', '', Object.keys(c.body).join(', '));
+    return r;
+  });
+  admin('POST', '/api/admin/reset', (c) => {
+    resetAndSeed(db, seedServices());
+    if (withDemoUsers) auth.seedDemoUsers(db, password);
+    c.log('demo.reiniciar', 'demo');
     return { ok: true };
   });
   // Catálogo masivo de prueba (para demostrar rendimiento con miles de productos). Reemplaza los datos actuales.
   admin('POST', '/api/admin/seed-large', (c) => {
     const n = Math.max(500, Math.min(Number(c.body.count) || 8500, 20000));
+    c.log('demo.catalogo_masivo', 'demo', '', `${n} productos`);
     return seedLarge(db, n);
   });
 
@@ -284,7 +494,9 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, c
   }, { raw: true, limit: CSV_LIMIT });
   admin('POST', '/api/admin/woo/import', (c) => {
     const { plan, report } = planFromCsv(csvFrom(c));
-    return { report, applied: applyPlan(db, plan, { reason: 'Importación desde WooCommerce (CSV)', updateStock: stockFlag(c.query) }) };
+    const applied = applyPlan(db, plan, { reason: 'Importación desde WooCommerce (CSV)', updateStock: stockFlag(c.query) });
+    c.log('woo.importar', 'catalogo', '', `${report.products} productos`);
+    return { report, applied };
   }, { raw: true, limit: CSV_LIMIT });
 
   admin('GET', '/api/admin/woo/status', () => ({
@@ -307,6 +519,7 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, c
     if (wooJob.running) throw new HttpError(409, 'Ya hay una sincronización en curso');
     Object.assign(wooJob, { running: true, phase: 'conectando', page: 0, pages: 0, items: 0, startedAt: new Date().toISOString(), finishedAt: null, error: null, result: null });
     const dry = c.body.dry === true;
+    c.log(dry ? 'woo.revisar' : 'woo.sincronizar', 'catalogo');
     pullCatalog(db, client, { apply: !dry, updateStock: !wooPush, progress: (p) => Object.assign(wooJob, p) })
       .then((r) => { wooJob.result = r; })
       .catch((e) => { wooJob.error = e.message; })
@@ -338,14 +551,15 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, c
     new Promise((resolveBody, reject) => {
       const chunks = [];
       let size = 0;
+      let over = false;
       req.on('data', (c) => {
         size += c.length;
-        if (size > 2e6) {
-          reject(new HttpError(413, 'El archivo es demasiado grande'));
-          req.destroy();
-        } else chunks.push(c);
+        if (over) return; // se sigue leyendo (y descartando) para poder contestar sin cortar la conexión
+        if (size > 2e6) over = true;
+        else chunks.push(c);
       });
       req.on('end', () => {
+        if (over) return reject(new HttpError(413, 'El archivo es demasiado grande'));
         if (!chunks.length) return resolveBody({});
         try {
           resolveBody(JSON.parse(Buffer.concat(chunks).toString('utf8')));
@@ -360,23 +574,17 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, c
     new Promise((resolveBody, reject) => {
       const chunks = [];
       let size = 0;
+      let over = false;
       req.on('data', (c) => {
         size += c.length;
-        if (size > limit) {
-          reject(new HttpError(413, 'El archivo es demasiado grande'));
-          req.destroy();
-        } else chunks.push(c);
+        if (over) return;
+        if (size > limit) over = true;
+        else chunks.push(c);
       });
-      req.on('end', () => resolveBody(Buffer.concat(chunks)));
+      req.on('end', () => (over ? reject(new HttpError(413, 'El archivo es demasiado grande')) : resolveBody(Buffer.concat(chunks))));
       req.on('error', reject);
     });
 
-  const isAuthed = (req) => {
-    const m = /^Bearer ([a-z0-9]{1,12})_([a-f0-9]{64})$/.exec(req.headers.authorization || '');
-    if (!m) return false;
-    const exp = parseInt(m[1], 36);
-    return exp > Date.now() && timingSafeEqual(Buffer.from(m[2]), Buffer.from(sign(exp)));
-  };
 
   // POST /api/chat → flujo de eventos (SSE): {type:'text'|'cards'|'action'|'tool'|'refusal'|'done'|'error'}
   async function handleChat(req, res) {
@@ -461,18 +669,31 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, c
         if (r.method !== req.method) continue;
         const m = r.re.exec(pathname);
         if (!m) continue;
-        if (r.admin && !isAuthed(req)) throw new HttpError(401, 'Inicia sesión para continuar');
-        const ctx = { params: m.groups || {}, query: url.searchParams, body: {}, status: 200, headers: req.headers, ip: clientIp(req) };
+        const ctx = { params: m.groups || {}, query: url.searchParams, body: {}, status: 200, headers: req.headers, ip: clientIp(req), user: null };
+        if (r.admin) {
+          ctx.user = staffOf(req);
+          if (!ctx.user) throw new HttpError(401, 'Inicia sesión para continuar');
+          // perm = [] significa «cualquier usuario del panel»; si no, hace falta tener alguno de los permisos de la ruta.
+          if (!(Array.isArray(r.perm) && !r.perm.length) && !auth.canAny(ctx.user, r.perm)) throw new HttpError(403, 'No tienes permiso para esto');
+        }
+        const logs = [];
+        ctx.log = (action, entity = '', id = '', detail = '') => logs.push({ action, entity, id, detail });
+        ctx.reply = (status, headers, body) => { ctx.rawResponse = { status, headers, body }; }; // para archivos (fotos, CSV)
         if (req.method !== 'GET') {
           if (r.raw) ctx.raw = await readRaw(req, r.limit);
           else ctx.body = await readBody(req);
         }
         const data = await r.handler(ctx);
+        for (const l of logs) auth.audit(db, ctx.user, { ...l, ip: ctx.ip });
+        if (ctx.rawResponse) {
+          res.writeHead(ctx.rawResponse.status, { 'Cache-Control': 'no-store', ...ctx.rawResponse.headers });
+          return res.end(req.method === 'HEAD' ? undefined : ctx.rawResponse.body);
+        }
         return send(res, ctx.status, data);
       }
       throw new HttpError(404, 'Ruta no encontrada');
     } catch (err) {
-      if (err instanceof HttpError) return send(res, err.status, { error: err.message, details: err.details });
+      if (err instanceof HttpError) return send(res, err.status, { error: err.message, details: err.details }, err.status === 413 ? { Connection: 'close' } : {});
       if (String(err.message).includes('STOCK_INSUFICIENTE')) {
         return send(res, 409, { error: 'No hay stock suficiente para completar la operación' });
       }
@@ -481,6 +702,35 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, c
     }
   });
 
-  server.on('close', () => flushTimer && clearInterval(flushTimer));
+  // Cada petición arma lo que un pedido necesita de afuera (marca, enlaces, facturación, pasarela).
+  const baseUrlOf = (c) => publicUrlEnv || publicOrigin({ headers: c.headers });
+  const services = (c) => ({ brand, baseUrl: baseUrlOf(c), fiscal: fiscalCfg, hostedPayments: payments.isHosted(payCfg), paymentProvider: payCfg.provider });
+  // Pedidos que esperan un pago que nunca llegó: se cancelan y el stock vuelve (se revisa en cada consulta y cada minuto).
+  function sweepPayments(c) {
+    payments.expirePending(db, payCfg, { onExpired: (orderId) => svc.failOrderPayment(db, orderId, { services: services(c || { headers: {} }), note: 'Venció el tiempo para pagar' }) });
+  }
+  const customerOf = (c) => {
+    const parsed = sessions.parse(c.headers.authorization);
+    if (!parsed || parsed.kind !== 'c') return null;
+    const cu = accounts.customerById(db, parsed.id);
+    return cu && sessions.valid(parsed, cu.pass_hash) ? cu : null;
+  };
+  const kit = { route, admin, db, brand, sessions, services, notifyCfg, fiscalCfg, payCfg, customerOf, giftFails, dummyHash: DUMMY_HASH, withDemoUsers };
+  registerOps(kit);
+  registerShop(kit);
+
+  const timers = [];
+  if (notify.notifyReady(notifyCfg)) timers.push(setInterval(() => notify.flush(db, notifyCfg, { brand, baseUrl: publicUrlEnv }).catch((e) => console.error('[avisos]', e.message)), 20_000));
+  if (fiscalCfg.provider === 'webhook') timers.push(setInterval(() => invoicing.flushFiscal(db, fiscalCfg, { brand }).catch((e) => console.error('[facturas]', e.message)), 30_000));
+  if (payments.isHosted(payCfg)) timers.push(setInterval(() => { try { sweepPayments(null); } catch (e) { console.error('[pagos]', e.message); } }, 60_000));
+  for (const t of timers) t.unref();
+
+  // Ninguna ruta del panel puede quedar sin permiso declarado (sería abierta a cualquier usuario del panel por descuido).
+  for (const r of routes) if (r.admin && r.perm === null) throw new Error(`La ruta ${r.method} ${r.pattern} no declara qué permiso exige`);
+
+  server.on('close', () => {
+    if (flushTimer) clearInterval(flushTimer);
+    for (const t of timers) clearInterval(t);
+  });
   return { server, db, chat, brand, wooClient };
 }

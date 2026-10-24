@@ -474,3 +474,7 @@
 :root[data-theme='shop'] .pp-skel-art { border-radius: 28px; }
 @media (max-width: 860px) { :root[data-theme='shop'] .pp-related.grid[data-layout='pequena'] { --cols: 3; } }
 @media (max-width: 560px) { :root[data-theme='shop'] .pp-related.grid[data-layout='pequena'] { --cols: 2; gap: 10px; } }
+
+/* Panel con la barra lateral de solo íconos: el nombre del usuario y los títulos de grupo no caben, así que el grupo pasa a ser una raya fina */
+:root[data-theme='shop'] .side-user { display: none; }
+:root[data-theme='shop'] .side-group { font-size: 0; height: 1px; margin: 6px 10px; padding: 0; background: #ebebeb; }

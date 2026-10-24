@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pago de demostración · {{BRAND_NAME}}</title>
+  <meta name="robots" content="noindex">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/css/base.css">
+  <style>
+    body { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
+    .pay { width: min(460px, 100%); display: grid; gap: 18px; padding: 34px 30px; border: 1px solid var(--line-strong); }
+    .pay h1 { font-size: 30px; }
+    .pay .amount { font-size: 48px; font-weight: 500; line-height: 1; color: var(--fg-accent); }
+    .pay .ref { font-family: ui-monospace, Consolas, monospace; letter-spacing: 0.06em; word-break: break-all; }
+    .pay .btns { display: grid; gap: 10px; }
+    .banner { padding: 10px 12px; background: var(--lemon); color: var(--olive); font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; text-align: center; }
+  </style>
+</head>
+<body class="dark">
+  <main class="pay" aria-labelledby="t">
+    <p class="banner">Simulación: no se cobra nada</p>
+    <h1 id="t">Página de pago de ejemplo</h1>
+    <p class="muted">Así funciona una pasarela de pago real: la tienda te manda a su página, pagas allí y vuelves con el resultado. Esta página imita ese paso para la demostración y <b>no pide datos de tarjeta</b>.</p>
+    <p class="caption upper muted">Total a pagar</p>
+    <p class="amount num" id="amount">—</p>
+    <p class="caption muted">Referencia <span class="ref" id="ref">—</span></p>
+    <p class="err-text" id="err" role="alert" hidden></p>
+    <div class="btns">
+      <button type="button" class="btn btn-lemon btn-block" id="ok">Simular pago aprobado</button>
+      <button type="button" class="btn btn-outline btn-block" id="bad">Simular pago rechazado</button>
+      <a class="btn btn-text btn-block" id="back" href="/">Volver sin pagar</a>
+    </div>
+  </main>
+  <script type="module" src="/js/pago-demo.js"></script>
+</body>
+</html>

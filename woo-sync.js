@@ -196,13 +196,14 @@ function recordOrder(db, o) {
       const stamp = localStamp(o.date_created) || localStamp(new Date().toISOString());
       const r = db
         .prepare(
-          `INSERT INTO orders (channel, customer_name, customer_email, customer_phone, delivery, address, payment_method, status, total, created_at)
-           VALUES ('online', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO orders (channel, customer_name, customer_email, customer_phone, delivery, address, payment_method, status, subtotal, total, created_at)
+           VALUES ('online', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           name.slice(0, 80), String(b.email || '').slice(0, 120) || null, String(b.phone || '').slice(0, 30) || null,
           (o.shipping_lines || []).length ? 'envio' : 'retiro', [b.address_1, b.city].filter(Boolean).join(', ').slice(0, 200) || null,
-          PAY[o.payment_method] || 'tarjeta', o.status === 'completed' ? 'entregado' : 'pagado', Number(o.total) || lines.reduce((s, l) => s + l.price * l.qty, 0), stamp
+          PAY[o.payment_method] || 'tarjeta', o.status === 'completed' ? 'entregado' : 'pagado',
+          Number(o.total) || lines.reduce((s, l) => s + l.price * l.qty, 0), Number(o.total) || lines.reduce((s, l) => s + l.price * l.qty, 0), stamp
         );
       orderId = Number(r.lastInsertRowid);
       const item = db.prepare('INSERT INTO order_items (order_id, variant_id, qty, unit_price, unit_cost) VALUES (?, ?, ?, ?, ?)');

@@ -3,6 +3,15 @@
 import { HttpError, tx, getSetting, setSetting } from './db.js';
 import { norm, searchText } from './text.js';
 import { CATEGORIES, UNCLASSIFIED, KINDS, bumpCatalog } from './catalog.js';
+import { expandLines } from './bundles.js';
+import * as pricing from './pricing.js';
+import * as gift from './giftcards.js';
+import { newTrackingCode, addEvent, eventsOf, setProgress } from './tracking.js';
+import { notifyOrderStep } from './notify.js';
+import { recordDocument, documentsOfOrder } from './invoicing.js';
+import { currentShift } from './shifts.js';
+import { newReference, recordAttempt } from './payments.js';
+import { pruneUnused } from './media.js';
 
 export { CATEGORIES, KINDS };
 
@@ -22,6 +31,7 @@ const text = (v, name, { max = 160, required = true } = {}) => {
   if (required && !s) throw new HttpError(400, `${name} es obligatorio`);
   return s.slice(0, max);
 };
+const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const oneOf = (v, list, name) => {
   if (!list.includes(v)) throw new HttpError(400, `${name} no es válido`);
   return v;
@@ -40,7 +50,7 @@ export function autoReplenish(db, { force = false } = {}) {
     .prepare(
       `SELECT v.id, v.supplier_id, v.reorder_qty, v.cost
          FROM variants v JOIN products p ON p.id = v.product_id
-        WHERE v.active = 1 AND p.active = 1 AND v.supplier_id IS NOT NULL
+        WHERE v.active = 1 AND p.active = 1 AND v.supplier_id IS NOT NULL AND v.is_set = 0
           AND v.stock <= v.min_stock
           AND NOT EXISTS (
             SELECT 1 FROM purchase_items pi JOIN purchases pu ON pu.id = pi.purchase_id
@@ -71,14 +81,16 @@ export function autoReplenish(db, { force = false } = {}) {
 }
 
 // ─── Ventas ────────────────────────────────────────────────────────────────
-export function createOrder(db, input, { channel = 'online', created_at = null, skipReplenish = false } = {}) {
+// `services` (lo arma la app en cada petición) trae lo que el pedido necesita de afuera: { brand, baseUrl, fiscal, hostedPayments }.
+// Sin él (pruebas, semilla) todo sigue funcionando: simplemente no se emiten facturas ni se arman enlaces.
+export function createOrder(db, input, { channel = 'online', created_at = null, skipReplenish = false, actor = null, customerId = null, services = {}, manualCapPct = Infinity } = {}) {
   const isPos = channel === 'mostrador';
   const customer = input.customer || {};
   const name = isPos ? text(customer.name || 'Cliente mostrador', 'Nombre') : text(customer.name, 'Nombre', { max: 80 });
   let email = text(customer.email, 'Correo', { max: 120, required: !isPos });
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'El correo no es válido');
   const phone = text(customer.phone, 'Teléfono', { max: 30, required: !isPos });
-  const payment = oneOf(input.payment_method, isPos ? POS_PAYMENTS : ONLINE_PAYMENTS, 'El método de pago');
+  let payment = oneOf(input.payment_method, isPos ? POS_PAYMENTS : ONLINE_PAYMENTS, 'El método de pago');
 
   let delivery = null;
   let address = '';
@@ -89,53 +101,79 @@ export function createOrder(db, input, { channel = 'online', created_at = null, 
 
   if (!Array.isArray(input.items) || input.items.length === 0) throw new HttpError(400, 'La bolsa está vacía');
   if (input.items.length > 50) throw new HttpError(400, 'Demasiados productos en un solo pedido');
-  const lines = new Map();
+  const wanted = new Map();
   for (const it of input.items) {
     const id = int(it.variant_id, 'Producto', { min: 1 });
     const qty = int(it.qty, 'Cantidad', { min: 1, max: 99 });
-    lines.set(id, (lines.get(id) || 0) + qty);
+    wanted.set(id, (wanted.get(id) || 0) + qty);
   }
+  const manual = isPos && input.discount && typeof input.discount === 'object' ? input.discount : null;
 
   return tx(db, () => {
-    const rows = [];
-    for (const [variantId, qty] of lines) {
-      const v = db
-        .prepare(
-          `SELECT v.id, v.price, v.cost, v.stock, v.size_ml, v.active AS v_active, p.name, p.active AS p_active
-             FROM variants v JOIN products p ON p.id = v.product_id WHERE v.id = ?`
-        )
-        .get(variantId);
-      if (!v || !v.v_active || !v.p_active) throw new HttpError(404, 'Uno de los productos ya no está disponible');
-      if (v.stock < qty) {
-        throw new HttpError(
-          409,
-          v.stock === 0
-            ? `${v.name} ${v.size_ml} ml está agotado`
-            : `Solo quedan ${v.stock} unidades de ${v.name} ${v.size_ml} ml`
-        );
-      }
-      rows.push({ ...v, qty });
+    const { items, lines: priceLines } = expandLines(db, wanted);
+    const q = pricing.quote(db, { lines: priceLines, coupon: input.coupon, channel, email, manual, day: created_at ? String(created_at).slice(0, 10) : null });
+    if (manual && manualCapPct < 100 && q.subtotal > 0 && (q.discount / q.subtotal) * 100 > manualCapPct + 1e-9) {
+      throw new HttpError(403, `Tu rol permite descontar hasta ${manualCapPct}%: pide autorización a un gerente`);
     }
+    const subtotal = q.subtotal;
+    const discount = q.discount;
+    const total = round2(subtotal - discount);
 
-    const total = Math.round(rows.reduce((s, r) => s + r.price * r.qty, 0) * 100) / 100;
-    const cols = ['channel', 'customer_name', 'customer_email', 'customer_phone', 'delivery', 'address', 'payment_method', 'total'];
-    const vals = [channel, name, email || null, phone || null, delivery, address || null, payment, total];
+    // Tarjeta de regalo: paga lo que alcance su saldo; el resto, con el método elegido.
+    let card = null;
+    let giftUse = 0;
+    if (String(input.gift_code ?? '').trim()) {
+      card = gift.usableCard(db, input.gift_code);
+      giftUse = round2(Math.min(card.balance, total));
+    }
+    const due = round2(total - giftUse);
+    if (due === 0 && giftUse > 0) payment = 'tarjeta_regalo';
+
+    const hosted = !isPos && !!services.hostedPayments && payment === 'tarjeta' && due > 0;
+    const status = hosted ? 'pendiente_pago' : 'pagado';
+    const shift = isPos && actor ? currentShift(db, actor.id) : null;
+    if (isPos && !shift && getSetting(db, 'require_shift', '0') === '1') throw new HttpError(409, 'Abre tu caja antes de cobrar');
+
+    const cols = ['channel', 'customer_name', 'customer_email', 'customer_phone', 'delivery', 'address', 'payment_method', 'status', 'subtotal', 'discount', 'total',
+      'gift_code', 'gift_amount', 'coupon_code', 'promo_label', 'customer_id', 'user_id', 'user_name', 'shift_id', 'tracking_code', 'notify_opt_in'];
+    const vals = [channel, name, email || null, phone || null, delivery, address || null, payment, status, subtotal, discount, total,
+      card?.code ?? null, giftUse, q.applied?.code ?? null, q.applied?.name ?? null, customerId, actor?.id ?? null, actor?.name ?? null, shift?.id ?? null,
+      isPos ? null : newTrackingCode(db), !isPos && input.notify_opt_in ? 1 : 0];
     if (created_at) {
       cols.push('created_at');
       vals.push(created_at);
     }
-    const r = db
-      .prepare(`INSERT INTO orders (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`)
-      .run(...vals);
+    const r = db.prepare(`INSERT INTO orders (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...vals);
     const orderId = Number(r.lastInsertRowid);
 
     // El trigger trg_item_sale descuenta el stock por cada línea.
-    const ins = db.prepare('INSERT INTO order_items (order_id, variant_id, qty, unit_price, unit_cost) VALUES (?, ?, ?, ?, ?)');
-    for (const row of rows) ins.run(orderId, row.id, row.qty, row.price, row.cost);
+    const ins = db.prepare('INSERT INTO order_items (order_id, variant_id, qty, unit_price, unit_cost, bundle_variant_id, bundle_units) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    for (const row of items) ins.run(orderId, row.variant_id, row.qty, row.unit_price, row.unit_cost, row.bundle_variant_id, row.bundle_units);
+
+    if (card && giftUse > 0) gift.redeem(db, card, giftUse, orderId);
+    if (q.applied?.code) pricing.consume(db, q.applied.code);
+
+    const ev = { createdAt: created_at, userName: actor?.name || '' };
+    if (!isPos) addEvent(db, orderId, 'recibido', ev);
+    let payInfo = null;
+    if (hosted) {
+      const reference = newReference();
+      recordAttempt(db, { orderId, provider: services.paymentProvider || 'hosted', reference, amount: due });
+      addEvent(db, orderId, 'pago_pendiente', ev);
+      payInfo = { reference, amount: due };
+    }
 
     const replenished = skipReplenish ? { items: 0, purchases: 0 } : autoReplenish(db);
-    return { ...getOrder(db, orderId), replenished };
+    const order = getOrder(db, orderId);
+    if (status === 'pagado') afterPaid(db, order, { services, historical: !!created_at, createdAt: created_at });
+    return { ...order, replenished, payment: payInfo, applied: q.applied, coupon_note: q.couponNote };
   });
+}
+
+// Lo que sigue a un pedido pagado: factura y aviso de confirmación (las ventas históricas de la semilla no avisan a nadie).
+function afterPaid(db, order, { services = {}, historical = false, createdAt = null }) {
+  recordDocument(db, order.id, 'factura', { cfg: services.fiscal, brand: services.brand, createdAt });
+  if (!historical && order.channel === 'online') notifyOrderStep(db, order, 'recibido', { baseUrl: services.baseUrl, brand: services.brand });
 }
 
 export function getOrder(db, id) {
@@ -143,7 +181,7 @@ export function getOrder(db, id) {
   if (!order) throw new HttpError(404, 'Pedido no encontrado');
   order.items = db
     .prepare(
-      `SELECT oi.qty, oi.unit_price, v.id AS variant_id, v.size_ml, v.sku, p.name, p.brand, p.color
+      `SELECT oi.id, oi.qty, oi.returned_qty, oi.unit_price, oi.bundle_variant_id, oi.bundle_units, v.id AS variant_id, v.size_ml, v.sku, p.name, p.brand, p.color
          FROM order_items oi JOIN variants v ON v.id = oi.variant_id JOIN products p ON p.id = v.product_id
         WHERE oi.order_id = ? ORDER BY oi.id`
     )
@@ -151,8 +189,30 @@ export function getOrder(db, id) {
   return order;
 }
 
-export function listOrders(db, limit = 200) {
-  const orders = db.prepare('SELECT * FROM orders ORDER BY id DESC LIMIT ?').all(limit);
+// Todo lo de un pedido para la ficha del panel: líneas, historial, devoluciones, pagos y facturas.
+export function getOrderDetail(db, id) {
+  const order = getOrder(db, id);
+  const setNames = new Map(db.prepare('SELECT v.id, p.name FROM variants v JOIN products p ON p.id = v.product_id WHERE v.is_set = 1').all().map((r) => [r.id, r.name]));
+  for (const i of order.items) i.bundle_name = i.bundle_variant_id ? setNames.get(i.bundle_variant_id) || 'Set de regalo' : null;
+  order.events = eventsOf(db, id);
+  order.returns = db.prepare('SELECT id, amount, refund_method, reason, credit_code, user_name, created_at FROM returns WHERE order_id = ? ORDER BY id').all(id);
+  order.payments = db.prepare('SELECT provider, reference, amount, status, created_at, updated_at FROM payment_attempts WHERE order_id = ? ORDER BY id').all(id);
+  order.documents = documentsOfOrder(db, id);
+  order.paid_amount = round2(order.total - order.gift_amount);
+  return order;
+}
+
+export function listOrders(db, { limit = 200, status = '', q = '' } = {}) {
+  const w = ['1 = 1'];
+  const a = [];
+  if (['pendiente_pago', 'pagado', 'entregado', 'cancelado'].includes(status)) { w.push('status = ?'); a.push(status); }
+  const term = String(q ?? '').trim();
+  if (term) {
+    const e = `%${term.slice(0, 40).replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    w.push("(customer_name LIKE ? ESCAPE '\\' OR customer_email LIKE ? ESCAPE '\\' OR CAST(id AS TEXT) = ? OR tracking_code = ?)");
+    a.push(e, e, term.replace(/^#/, ''), term.toUpperCase());
+  }
+  const orders = db.prepare(`SELECT * FROM orders WHERE ${w.join(' AND ')} ORDER BY id DESC LIMIT ?`).all(...a, Math.max(1, Math.min(Number(limit) || 200, 500)));
   if (!orders.length) return orders;
   const items = db
     .prepare(
@@ -170,13 +230,67 @@ export function listOrders(db, limit = 200) {
   return orders;
 }
 
-export function setOrderStatus(db, id, status) {
+// Los pedidos que llegan de WooCommerce los atiende WooCommerce (sus propios correos y su facturación): aquí no se les avisa de nuevo.
+const isFromWoo = (db, orderId) => !!db.prepare('SELECT 1 FROM woo_orders WHERE order_id = ?').get(orderId);
+
+// Cancela un pedido (pagado o a la espera del pago): el stock vuelve solo (trigger), la tarjeta de regalo recupera su saldo,
+// el cupón se libera y, si ya tenía factura, se emite la nota de crédito.
+function cancelOrder(db, o, { actor = null, services = {}, note = '' } = {}) {
+  db.prepare("UPDATE orders SET status = 'cancelado' WHERE id = ?").run(o.id); // trg_order_cancel devuelve el stock
+  gift.reverseForOrder(db, o.id);
+  pricing.release(db, o.coupon_code);
+  addEvent(db, o.id, 'cancelado', { note, userName: actor?.name || '' });
+  if (o.status === 'pagado' && db.prepare("SELECT 1 FROM fiscal_docs WHERE order_id = ? AND kind = 'factura' AND status <> 'error' LIMIT 1").get(o.id)) {
+    recordDocument(db, o.id, 'nota_credito', { cfg: services.fiscal, brand: services.brand, amount: o.total });
+  }
+  if (o.channel === 'online' && !isFromWoo(db, o.id)) notifyOrderStep(db, getOrder(db, o.id), 'cancelado', { baseUrl: services.baseUrl, brand: services.brand });
+}
+
+export function setOrderStatus(db, id, status, { actor = null, services = {} } = {}) {
   oneOf(status, ['entregado', 'cancelado'], 'El estado');
   return tx(db, () => {
-    const o = db.prepare('SELECT status FROM orders WHERE id = ?').get(id);
+    const o = db.prepare('SELECT * FROM orders WHERE id = ?').get(id);
     if (!o) throw new HttpError(404, 'Pedido no encontrado');
-    if (o.status !== 'pagado') throw new HttpError(409, `El pedido ya está ${o.status}`);
-    db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(status, id); // trg_order_cancel devuelve el stock
+    if (o.status === 'pendiente_pago' && status === 'entregado') throw new HttpError(409, 'El pedido todavía no está pagado');
+    if (!(o.status === 'pagado' || (o.status === 'pendiente_pago' && status === 'cancelado'))) throw new HttpError(409, `El pedido ya está ${o.status}`);
+    if (status === 'cancelado') cancelOrder(db, o, { actor, services });
+    else {
+      db.prepare("UPDATE orders SET status = 'entregado' WHERE id = ?").run(id);
+      addEvent(db, id, 'entregado', { userName: actor?.name || '' });
+      if (o.channel === 'online' && !isFromWoo(db, id)) notifyOrderStep(db, getOrder(db, id), 'entregado', { baseUrl: services.baseUrl, brand: services.brand });
+    }
+    return getOrder(db, id);
+  });
+}
+
+// Paso intermedio del seguimiento (preparando, listo, enviado) y aviso al cliente.
+export function advanceOrder(db, id, step, { actor = null, services = {} } = {}) {
+  return tx(db, () => {
+    setProgress(db, id, step, actor);
+    notifyOrderStep(db, getOrder(db, id), step, { baseUrl: services.baseUrl, brand: services.brand });
+    return getOrderDetail(db, id);
+  });
+}
+
+// La pasarela confirmó el pago de un pedido que estaba pendiente.
+export function markOrderPaid(db, id, { services = {} } = {}) {
+  return tx(db, () => {
+    const o = db.prepare('SELECT * FROM orders WHERE id = ?').get(id);
+    if (!o || o.status !== 'pendiente_pago') return null;
+    db.prepare("UPDATE orders SET status = 'pagado' WHERE id = ?").run(id);
+    addEvent(db, id, 'pago_confirmado');
+    const order = getOrder(db, id);
+    afterPaid(db, order, { services });
+    return order;
+  });
+}
+
+// El pago no se completó (rechazado o vencido): el pedido se cancela y el stock reservado vuelve.
+export function failOrderPayment(db, id, { services = {}, note = 'El pago no se completó' } = {}) {
+  return tx(db, () => {
+    const o = db.prepare('SELECT * FROM orders WHERE id = ?').get(id);
+    if (!o || o.status !== 'pendiente_pago') return null;
+    cancelOrder(db, o, { services, note });
     return getOrder(db, id);
   });
 }
@@ -184,7 +298,7 @@ export function setOrderStatus(db, id, status) {
 // ─── Inventario ────────────────────────────────────────────────────────────
 // Paginado y filtrado en SQL: con miles de variantes, el panel nunca carga todo de una vez.
 const INV_SELECT = `
-  SELECT v.id, v.sku, v.size_ml, v.price, v.compare_at, v.cost, v.stock, v.min_stock, v.reorder_qty, v.supplier_id, v.active,
+  SELECT v.id, v.sku, v.barcode, v.is_set, v.size_ml, v.price, v.compare_at, v.cost, v.stock, v.min_stock, v.reorder_qty, v.supplier_id, v.active,
          p.id AS product_id, p.name, p.brand, p.category, p.subcategory, p.kind, p.family, p.color, p.image, p.is_new,
          p.active AS product_active, s.name AS supplier_name,
          EXISTS (SELECT 1 FROM purchase_items pi JOIN purchases pu ON pu.id = pi.purchase_id
@@ -206,12 +320,12 @@ export function listInventory(db, { q = '', filter = 'todos', category = '', bra
   const w = ['1 = 1'];
   const a = [];
   for (const t of norm(q).split(/[^a-z0-9]+/).filter(Boolean).slice(0, 6)) {
-    w.push("(p.search_text LIKE ? ESCAPE '\\' OR v.sku LIKE ? ESCAPE '\\' COLLATE NOCASE)");
+    w.push("(p.search_text LIKE ? ESCAPE '\\' OR v.sku LIKE ? ESCAPE '\\' COLLATE NOCASE OR v.barcode = ?)");
     const e = t.replace(/[\\%_]/g, (c) => `\\${c}`);
-    a.push(`% ${e}%`, `%${e}%`);
+    a.push(`% ${e}%`, `%${e}%`, t);
   }
-  if (filter === 'bajo') w.push('v.stock > 0 AND v.stock <= v.min_stock');
-  else if (filter === 'agotado') w.push('v.stock = 0');
+  if (filter === 'bajo') w.push('v.is_set = 0 AND v.stock > 0 AND v.stock <= v.min_stock');
+  else if (filter === 'agotado') w.push('v.is_set = 0 AND v.stock = 0');
   else if (filter === 'encamino') w.push("EXISTS (SELECT 1 FROM purchase_items pi JOIN purchases pu ON pu.id = pi.purchase_id WHERE pi.variant_id = v.id AND pu.status = 'pendiente')");
   else if (filter === 'oculto') w.push('(v.active = 0 OR p.active = 0)');
   if (sellable) w.push('v.active = 1 AND p.active = 1');
@@ -237,8 +351,8 @@ export function inventoryCounts(db) {
   return db
     .prepare(
       `SELECT COUNT(*) AS total,
-              COALESCE(SUM(v.stock = 0), 0) AS out_count,
-              COALESCE(SUM(v.stock > 0 AND v.stock <= v.min_stock), 0) AS low_count,
+              COALESCE(SUM(v.is_set = 0 AND v.stock = 0), 0) AS out_count,
+              COALESCE(SUM(v.is_set = 0 AND v.stock > 0 AND v.stock <= v.min_stock), 0) AS low_count,
               COALESCE(SUM(v.active = 0 OR p.active = 0), 0) AS hidden_count
          FROM variants v JOIN products p ON p.id = v.product_id`
     )
@@ -253,7 +367,16 @@ const VARIANT_FIELDS = {
   reorder_qty: (v) => int(v, 'La cantidad de reposición', { min: 1, max: 10_000 }),
   supplier_id: (v) => (v === null || v === '' ? null : int(v, 'El proveedor', { min: 1 })),
   active: (v) => (v ? 1 : 0),
+  barcode: (v) => barcodeOf(v),
 };
+
+// Código de barras (EAN/UPC u otro): de 4 a 32 letras, números, punto, guion o guion bajo. Vacío = sin código.
+export function barcodeOf(v) {
+  const s = String(v ?? '').trim();
+  if (!s) return null;
+  if (!/^[A-Za-z0-9._-]{4,32}$/.test(s)) throw new HttpError(400, 'El código de barras debe tener de 4 a 32 letras o números');
+  return s;
+}
 
 export function updateVariant(db, id, body) {
   const sets = [];
@@ -266,8 +389,13 @@ export function updateVariant(db, id, body) {
   }
   if (!sets.length) throw new HttpError(400, 'No hay cambios que guardar');
   return tx(db, () => {
-    const cur = db.prepare('SELECT price, compare_at FROM variants WHERE id = ?').get(id);
+    const cur = db.prepare('SELECT price, compare_at, is_set FROM variants WHERE id = ?').get(id);
     if (!cur) throw new HttpError(404, 'Variante no encontrada');
+    if (cur.is_set && Object.keys(body).some((k) => k !== 'active')) throw new HttpError(409, 'Un set de regalo se edita en la sección Sets');
+    if ('barcode' in body) {
+      const code = barcodeOf(body.barcode);
+      if (code && db.prepare('SELECT 1 FROM variants WHERE id <> ? AND (barcode = ? OR sku = ? COLLATE NOCASE)').get(id, code, code)) throw new HttpError(409, 'Ese código de barras ya lo usa otro producto');
+    }
     const price = 'price' in body ? VARIANT_FIELDS.price(body.price) : cur.price;
     const compare = 'compare_at' in body ? VARIANT_FIELDS.compare_at(body.compare_at) : cur.compare_at;
     if (compare !== null && compare !== undefined && compare <= price) {
@@ -281,18 +409,19 @@ export function updateVariant(db, id, body) {
 }
 
 // Ajuste manual: por diferencia (delta) o por conteo físico (count).
-export function adjustStock(db, variantId, { delta, count, reason }) {
+export function adjustStock(db, variantId, { delta, count, reason, actor = null }) {
   const why = text(reason, 'El motivo', { max: 120 });
   return tx(db, () => {
-    const v = db.prepare('SELECT id, stock FROM variants WHERE id = ?').get(variantId);
+    const v = db.prepare('SELECT id, stock, is_set FROM variants WHERE id = ?').get(variantId);
     if (!v) throw new HttpError(404, 'Variante no encontrada');
+    if (v.is_set) throw new HttpError(409, 'El stock de un set se calcula con los productos que incluye: ajusta esos productos');
     let d;
     if (count !== undefined && count !== null && count !== '') d = int(count, 'El conteo', { max: 100_000 }) - v.stock;
     else d = Number(delta);
     if (!Number.isInteger(d)) throw new HttpError(400, 'La cantidad no es válida');
     if (d === 0) throw new HttpError(400, 'El stock ya coincide, no hay nada que ajustar');
     if (v.stock + d < 0) throw new HttpError(409, `No se puede restar ${-d}: solo hay ${v.stock} en stock`);
-    db.prepare(`INSERT INTO stock_movements (variant_id, type, qty, reason) VALUES (?, 'ajuste', ?, ?)`).run(variantId, d, why);
+    db.prepare(`INSERT INTO stock_movements (variant_id, type, qty, reason, user_name) VALUES (?, 'ajuste', ?, ?, ?)`).run(variantId, d, why, actor?.name ?? null);
     const replenished = autoReplenish(db);
     return { delta: d, stock: v.stock + d, replenished };
   });
@@ -311,7 +440,7 @@ export function listMovements(db, { variantId = null, type = '', limit = 150 } =
   }
   return db
     .prepare(
-      `SELECT m.id, m.type, m.qty, m.reason, m.balance, m.created_at, m.ref_type, m.ref_id,
+      `SELECT m.id, m.type, m.qty, m.reason, m.balance, m.created_at, m.ref_type, m.ref_id, m.user_name,
               v.sku, v.size_ml, p.name
          FROM stock_movements m JOIN variants v ON v.id = m.variant_id JOIN products p ON p.id = v.product_id
         ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
@@ -321,7 +450,7 @@ export function listMovements(db, { variantId = null, type = '', limit = 150 } =
 }
 
 // Carga masiva: "sku,cantidad[,costo]" (se puede exportar desde Excel como CSV).
-export function importCsv(db, csv) {
+export function importCsv(db, csv, { actor = null } = {}) {
   const lines = String(csv ?? '')
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -333,10 +462,10 @@ export function importCsv(db, csv) {
 
   const errors = [];
   const entries = [];
-  const find = db.prepare('SELECT id, sku FROM variants WHERE sku = ? COLLATE NOCASE');
+  const find = db.prepare('SELECT id, sku FROM variants WHERE (sku = ? COLLATE NOCASE OR barcode = ?) AND is_set = 0');
   rows.forEach((r, i) => {
     const n = i + 1;
-    const v = find.get(r[0] || '');
+    const v = find.get(r[0] || '', r[0] || '');
     const qty = Number(r[1]);
     if (!v) return errors.push(`Fila ${n}: el SKU "${r[0] ?? ''}" no existe`);
     if (!Number.isInteger(qty) || qty <= 0) return errors.push(`Fila ${n}: la cantidad debe ser un entero mayor a 0`);
@@ -351,10 +480,10 @@ export function importCsv(db, csv) {
   if (!entries.length) throw new HttpError(400, 'No hay filas para importar');
 
   return tx(db, () => {
-    const mov = db.prepare(`INSERT INTO stock_movements (variant_id, type, qty, reason) VALUES (?, 'entrada', ?, 'Carga masiva (CSV)')`);
+    const mov = db.prepare(`INSERT INTO stock_movements (variant_id, type, qty, reason, user_name) VALUES (?, 'entrada', ?, 'Carga masiva (CSV)', ?)`);
     const setCost = db.prepare('UPDATE variants SET cost = ? WHERE id = ?');
     for (const e of entries) {
-      mov.run(e.id, e.qty);
+      mov.run(e.id, e.qty, actor?.name ?? null);
       if (e.cost !== null) setCost.run(e.cost, e.id);
     }
     return { applied: entries.length, units: entries.reduce((s, e) => s + e.qty, 0) };
@@ -365,8 +494,8 @@ export function importCsv(db, csv) {
 const imageUrl = (v) => {
   const s = String(v ?? '').trim();
   if (!s) return null;
-  if (/^\/img\/[\w./-]+$/.test(s) || /^https:\/\/[^\s"'<>]{4,500}$/.test(s)) return s;
-  throw new HttpError(400, 'La imagen debe ser una ruta /img/... o una dirección https');
+  if (/^\/img\/[\w./-]+$/.test(s) || /^\/api\/media\/\d{1,9}$/.test(s) || /^https:\/\/[^\s"'<>]{4,500}$/.test(s)) return s;
+  throw new HttpError(400, 'La imagen debe ser una foto subida, una ruta /img/... o una dirección https');
 };
 const linkUrl = (v) => {
   const s = String(v ?? '').trim();
@@ -395,7 +524,7 @@ function refreshSearchText(db, id) {
   if (p) db.prepare('UPDATE products SET search_text = ? WHERE id = ?').run(searchText(p), id);
 }
 
-export function createProduct(db, body, { skuPrefix = 'DLX' } = {}) {
+export function createProduct(db, body, { skuPrefix = 'DLX', actor = null } = {}) {
   const f = {
     name: PRODUCT_FIELDS.name(body.name),
     brand: PRODUCT_FIELDS.brand(body.brand),
@@ -430,6 +559,7 @@ export function createProduct(db, body, { skuPrefix = 'DLX' } = {}) {
       reorder_qty: int(v.reorder_qty ?? 12, 'La cantidad de reposición', { min: 1, max: 10_000 }),
       supplier_id: v.supplier_id ? int(v.supplier_id, 'El proveedor', { min: 1 }) : null,
       sku: v.sku ? text(v.sku, 'El SKU', { max: 40 }) : null,
+      barcode: barcodeOf(v.barcode),
     };
   });
 
@@ -444,16 +574,18 @@ export function createProduct(db, body, { skuPrefix = 'DLX' } = {}) {
     for (const v of variants) {
       const sku = v.sku || `${skuPrefix}-${String(pid).padStart(5, '0')}-${v.size || 'U'}`;
       if (db.prepare('SELECT 1 FROM variants WHERE sku = ? COLLATE NOCASE').get(sku)) throw new HttpError(409, `El SKU ${sku} ya existe`);
+      if (v.barcode && db.prepare('SELECT 1 FROM variants WHERE barcode = ? OR sku = ? COLLATE NOCASE').get(v.barcode, v.barcode)) throw new HttpError(409, `El código de barras ${v.barcode} ya lo usa otro producto`);
       const vr = db
         .prepare(
-          `INSERT INTO variants (product_id, sku, size_ml, price, compare_at, cost, min_stock, reorder_qty, supplier_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO variants (product_id, sku, size_ml, price, compare_at, cost, min_stock, reorder_qty, supplier_id, barcode)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(pid, sku, v.size, v.price, v.compare_at, v.cost, v.min_stock, v.reorder_qty, v.supplier_id);
+        .run(pid, sku, v.size, v.price, v.compare_at, v.cost, v.min_stock, v.reorder_qty, v.supplier_id, v.barcode);
       if (v.stock > 0) {
-        db.prepare(`INSERT INTO stock_movements (variant_id, type, qty, reason) VALUES (?, 'entrada', ?, 'Inventario inicial')`).run(
+        db.prepare(`INSERT INTO stock_movements (variant_id, type, qty, reason, user_name) VALUES (?, 'entrada', ?, 'Inventario inicial', ?)`).run(
           Number(vr.lastInsertRowid),
-          v.stock
+          v.stock,
+          actor?.name ?? null
         );
       }
     }
@@ -478,6 +610,7 @@ export function updateProduct(db, id, body) {
     const r = db.prepare(`UPDATE products SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
     if (!r.changes) throw new HttpError(404, 'Producto no encontrado');
     refreshSearchText(db, id);
+    if ('image' in body) pruneUnused(db); // la foto que se reemplazó ya no ocupa lugar
     bumpCatalog(db);
     return { ok: true };
   });
@@ -504,7 +637,7 @@ export function listProductsAdmin(db, { q = '', category = '', kind = '', brand 
   const total = db.prepare(`SELECT COUNT(*) AS n FROM products p WHERE ${cond}`).get(...a).n;
   const rows = db
     .prepare(
-      `SELECT p.id, p.name, p.brand, p.category, p.subcategory, p.kind, p.family, p.image, p.is_new, p.active, p.permalink,
+      `SELECT p.id, p.name, p.brand, p.category, p.subcategory, p.kind, p.family, p.notes, p.description, p.color, p.image, p.is_new, p.active, p.permalink,
               COUNT(v.id) AS sizes, COALESCE(SUM(v.stock), 0) AS stock, MIN(v.price) AS min_price, GROUP_CONCAT(v.size_ml, ',') AS size_list
          FROM products p LEFT JOIN variants v ON v.product_id = p.id AND v.active = 1
         WHERE ${cond} GROUP BY p.id ORDER BY p.search_text LIMIT ? OFFSET ?`
@@ -568,13 +701,14 @@ export function createPurchase(db, body) {
   });
 }
 
-export function setPurchaseStatus(db, id, status) {
+export function setPurchaseStatus(db, id, status, { actor = null } = {}) {
   oneOf(status, ['recibida', 'cancelada'], 'El estado');
   return tx(db, () => {
     const pu = db.prepare('SELECT status FROM purchases WHERE id = ?').get(id);
     if (!pu) throw new HttpError(404, 'Compra no encontrada');
     if (pu.status !== 'pendiente') throw new HttpError(409, `La compra ya está ${pu.status}`);
     db.prepare('UPDATE purchases SET status = ? WHERE id = ?').run(status, id); // trg_purchase_receive suma el stock
+    if (actor) db.prepare("UPDATE stock_movements SET user_name = ? WHERE ref_type = 'purchase' AND ref_id = ? AND user_name IS NULL").run(actor.name, id);
     return { ok: true };
   });
 }
@@ -586,7 +720,7 @@ function localDay(d) {
 }
 
 export function dashboard(db) {
-  const active = `status <> 'cancelado'`;
+  const active = `status IN ('pagado','entregado')`;
   const today = db
     .prepare(`SELECT COALESCE(SUM(total),0) AS total, COUNT(*) AS n FROM orders WHERE ${active} AND date(created_at) = date('now','localtime')`)
     .get();
@@ -622,7 +756,7 @@ export function dashboard(db) {
               COALESCE(SUM(v.stock),0) AS units,
               COALESCE(SUM(v.stock = 0),0) AS out_count,
               COALESCE(SUM(v.stock > 0 AND v.stock <= v.min_stock),0) AS low_count
-         FROM variants v JOIN products p ON p.id = v.product_id WHERE v.active = 1 AND p.active = 1`
+         FROM variants v JOIN products p ON p.id = v.product_id WHERE v.active = 1 AND p.active = 1 AND v.is_set = 0`
     )
     .get();
   const top = db
@@ -645,7 +779,7 @@ export function dashboard(db) {
               EXISTS (SELECT 1 FROM purchase_items pi JOIN purchases pu ON pu.id = pi.purchase_id
                        WHERE pi.variant_id = v.id AND pu.status = 'pendiente') AS on_order
          FROM variants v JOIN products p ON p.id = v.product_id
-        WHERE v.active = 1 AND p.active = 1 AND v.stock <= v.min_stock
+        WHERE v.active = 1 AND p.active = 1 AND v.is_set = 0 AND v.stock <= v.min_stock
         ORDER BY v.stock ASC, p.name LIMIT 10`
     )
     .all();
@@ -670,4 +804,13 @@ export function getSettings(db) {
 export function updateSettings(db, body) {
   if ('auto_reorder' in body) setSetting(db, 'auto_reorder', body.auto_reorder ? '1' : '0');
   return getSettings(db);
+}
+
+// Lector de códigos del mostrador: el código que llega es un SKU o un código de barras. Devuelve la fila de inventario vendible.
+export function lookupCode(db, code) {
+  const c = String(code ?? '').trim();
+  if (!c) throw new HttpError(400, 'Escribe o escanea un código');
+  const row = db.prepare('SELECT v.id FROM variants v WHERE (v.sku = ? COLLATE NOCASE OR v.barcode = ?) ORDER BY (v.sku = ? COLLATE NOCASE) DESC LIMIT 1').get(c, c, c);
+  if (!row) throw new HttpError(404, `No hay ningún producto con el código ${c.slice(0, 40)}`);
+  return getInventoryRow(db, row.id);
 }

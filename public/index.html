@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="/css/base.css">
   <link rel="stylesheet" href="/css/store.css">
   <link rel="stylesheet" href="/css/chat.css">
+  <link rel="stylesheet" href="/css/store-ext.css">
   <link rel="stylesheet" href="/css/theme-shop.css">
   <script>document.documentElement.classList.add('js')</script>
 </head>
@@ -33,6 +34,8 @@
       <a class="wordmark" href="/" aria-label="{{BRAND_NAME}}, inicio">{{BRAND_SHORT}}</a>
       <nav class="nav nav-right" aria-label="Cuenta y bolsa">
         <a href="#nosotros" class="nav-link nav-about" id="nav-about"><span class="nav-long">Quiénes somos</span><span class="nav-short">Nosotros</span></a>
+        <button type="button" class="nav-link nav-icon" id="fav-btn" aria-label="Mis favoritos"><span id="fav-icon" aria-hidden="true"></span><span class="nav-lbl">Favoritos</span><span class="bag-count" id="fav-count" hidden>0</span></button>
+        <button type="button" class="nav-link nav-icon" id="acct-btn" aria-label="Mi cuenta"><span id="acct-icon" aria-hidden="true"></span><span class="nav-lbl" id="acct-lbl">Entrar</span></button>
         <a href="/admin" class="nav-link nav-admin">Panel</a>
         <button type="button" class="nav-link nav-bag" id="cart-btn" aria-label="Abrir la bolsa">
           <span class="bag-icon" id="bag-icon"></span>
@@ -42,6 +45,8 @@
       </nav>
     </div>
   </header>
+
+  <aside class="offer-bar dark" id="offer-bar" hidden aria-label="Ofertas vigentes"></aside>
 
   <main>
     <section class="hero dark" aria-labelledby="hero-title">
@@ -53,6 +58,7 @@
           <div class="hero-cta rise" style="--d:800ms">
             <a class="btn btn-lemon" href="#catalogo">Ver la colección</a>
             <a class="btn btn-outline" href="#destacado">La pieza de la casa</a>
+            <button type="button" class="btn btn-outline" data-x="finder">Encuentra tu perfume</button>
           </div>
         </div>
         <div class="hero-art" id="hero-art" aria-hidden="true"></div>
@@ -67,6 +73,7 @@
             <button type="submit" class="search-go" aria-label="Buscar"></button>
           </form>
           <div class="cat-pills" id="cat-pills" role="group" aria-label="Familias olfativas"></div>
+          <p class="finder-line"><button type="button" class="link-arrow" data-x="finder">¿No sabes cuál elegir? Encuentra tu perfume en un minuto</button></p>
         </div>
       </div>
     </section>
@@ -196,6 +203,9 @@
           <li>Pago con tarjeta, transferencia o contra entrega</li>
         </ul>
         <ul class="footer-list footer-links">
+          <li><button type="button" class="footer-link" data-x="track">Seguimiento de pedido</button></li>
+          <li><button type="button" class="footer-link" data-x="gift">Tarjetas de regalo</button></li>
+          <li><button type="button" class="footer-link" data-x="finder">Encuentra tu perfume</button></li>
           <li><button type="button" class="footer-link" data-info="envios">Envíos y pagos</button></li>
           <li><button type="button" class="footer-link" data-info="contacto">Contacto</button></li>
           <li><a href="#nosotros">Quiénes somos</a></li>
@@ -216,8 +226,10 @@
         <p class="caption upper muted" id="pd-meta"></p>
         <h2 class="h-lg" id="pd-name"></h2>
         <p class="pd-rating" id="pd-rating"></p>
+        <button type="button" class="fav-inline" id="pd-fav" data-fav="0" aria-pressed="false"></button>
         <p class="body-lg pd-desc" id="pd-desc"></p>
         <p class="pd-notes"><span class="label">Notas</span><span id="pd-notes"></span></p>
+        <div class="bundle-box" id="pd-bundle" hidden></div>
         <a class="btn btn-outline btn-sm pd-page" id="pd-page" href="#producto/0" title="Detalles, reseñas y más perfumes">Ver página completa del producto <span aria-hidden="true">→</span></a>
 
         <fieldset class="sizes">
@@ -225,6 +237,7 @@
           <div class="size-list" id="pd-sizes"></div>
         </fieldset>
 
+        <div class="notify-slot" id="pd-notify"></div>
         <div class="pd-cta">
         <div class="pd-buy">
           <div>
@@ -252,6 +265,15 @@
     <div class="b-body" id="brands-body"></div>
   </dialog>
 
+  <!-- Cuenta, favoritos, seguimiento, buscador y tarjetas de regalo (store-ext.js) -->
+  <dialog id="x-dialog" class="dark bdialog xdialog" aria-labelledby="x-title">
+    <div class="b-head">
+      <h2 class="h" id="x-title"></h2>
+      <button type="button" class="icon-btn" aria-label="Cerrar" id="x-close"></button>
+    </div>
+    <div class="b-body" id="x-body"></div>
+  </dialog>
+
   <!-- Información -->
   <dialog id="info-dialog" class="dark bdialog" aria-labelledby="info-title">
     <div class="b-head">
@@ -277,6 +299,7 @@
   </dialog>
 
   <script type="module" src="/js/store.js"></script>
+  <script type="module" src="/js/store-ext.js"></script>
   <script type="module" src="/js/chat.js"></script>
 </body>
 </html>

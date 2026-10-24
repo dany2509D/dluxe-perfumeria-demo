@@ -14,7 +14,7 @@
     "deploy": "npx netlify-cli build && npx netlify-cli deploy --prod --no-build"
   },
   "engines": {
-    "node": ">=22.13"
+    "node": ">=22.16"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.1.0",

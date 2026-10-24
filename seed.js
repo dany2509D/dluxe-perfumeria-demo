@@ -9,6 +9,8 @@ import { bumpCatalog } from './catalog.js';
 import { searchText } from './text.js';
 import { loadBrand } from './brand.js';
 import { pickPhoto } from './photos.js';
+import { createSet } from './bundles.js';
+import { createPromotion } from './pricing.js';
 
 const SUPPLIERS = [
   ['Distribuidora Esencia S.A.', 'ventas@esencia.example', 4],
@@ -90,6 +92,12 @@ function rng(seed) {
   };
 }
 
+// Código de barras de ejemplo (EAN-13 válido, prefijo 745) para que el lector del mostrador tenga algo que leer.
+function ean13(n) {
+  const body = `745${String(n).padStart(9, '0')}`;
+  const sum = [...body].reduce((s, d, i) => s + Number(d) * (i % 2 ? 3 : 1), 0);
+  return body + ((10 - (sum % 10)) % 10);
+}
 const pad = (n) => String(n).padStart(2, '0');
 const stamp = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 const dealPrice = (price, pct) => Math.ceil(price / (1 - pct / 100));
@@ -110,12 +118,12 @@ function addProduct(db, ctx, p, sizes) {
     const vid = Number(
       db
         .prepare(
-          `INSERT INTO variants (product_id, sku, size_ml, price, compare_at, cost, min_stock, reorder_qty, supplier_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO variants (product_id, sku, size_ml, price, compare_at, cost, min_stock, reorder_qty, supplier_id, barcode)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           pid, `${ctx.prefix}-${String(pid).padStart(5, '0')}-${s.ml || 'U'}`, s.ml, s.price, s.compare_at ?? null,
-          Math.round(s.price * 0.42 * 100) / 100, s.ml >= 100 || s.ml === 0 ? 3 : 4, s.ml >= 100 ? 8 : 12, p.supplier ?? 1
+          Math.round(s.price * 0.42 * 100) / 100, s.ml >= 100 || s.ml === 0 ? 3 : 4, s.ml >= 100 ? 8 : 12, p.supplier ?? 1, ean13((ctx.ean = (ctx.ean || 0) + 1))
         ).lastInsertRowid
     );
     const initial = s.stock ?? 10 + Math.floor(ctx.rand() * 16);
@@ -126,12 +134,17 @@ function addProduct(db, ctx, p, sizes) {
   return pid;
 }
 
-const WIPE = ['reviews', 'woo_outbox', 'woo_orders', 'woo_events', 'order_items', 'orders', 'purchase_items', 'purchases', 'stock_movements', 'variants', 'products', 'suppliers'];
+// Los usuarios del panel y las cuentas de clientes no se tocan: reiniciar la demostración borra datos de ejemplo, no personas.
+const WIPE = [
+  'notifications', 'stock_alerts', 'fiscal_docs', 'payment_attempts', 'return_items', 'returns', 'gift_card_uses', 'gift_cards', 'promotions',
+  'cash_movements', 'cash_shifts', 'order_events', 'customer_favorites', 'bundle_items', 'media',
+  'reviews', 'woo_outbox', 'woo_orders', 'woo_events', 'order_items', 'orders', 'purchase_items', 'purchases', 'stock_movements', 'variants', 'products', 'suppliers',
+];
 
 function wipe(db) {
   for (const t of WIPE) db.exec(`DELETE FROM ${t}`);
-  // Los ajustes se reinician, salvo la configuración de la conexión con WooCommerce.
-  db.exec("DELETE FROM settings WHERE substr(key, 1, 4) <> 'woo_'");
+  // Se reinician la reposición automática y la numeración de facturas de ejemplo; el resto de ajustes (WooCommerce, avisos, políticas) se conserva.
+  db.exec("DELETE FROM settings WHERE key IN ('auto_reorder', 'fiscal_seq_fe', 'fiscal_seq_nc')");
 }
 
 // Reseñas de ejemplo (nombres inventados y comentarios generales, sin datos de personas reales): cada producto recibe de 0 a 4,
@@ -211,7 +224,7 @@ function seedCatalog(db, ctx) {
 }
 
 // Historial: 14 días de ventas (online y mostrador).
-function seedHistory(db, rand) {
+function seedHistory(db, rand, services = {}) {
   const pick = (arr) => arr[Math.floor(rand() * arr.length)];
   const variants = db.prepare('SELECT v.id FROM variants v JOIN products p ON p.id = v.product_id WHERE p.kind = ? ORDER BY v.id').all('Perfume').map((v) => v.id);
   const now = new Date();
@@ -240,7 +253,7 @@ function seedHistory(db, rand) {
                 items,
               }
             : { customer: { name: 'Cliente mostrador' }, payment_method: pick(['efectivo', 'tarjeta', 'efectivo']), items },
-          { channel: online ? 'online' : 'mostrador', created_at: stamp(when), skipReplenish: true }
+          { channel: online ? 'online' : 'mostrador', created_at: stamp(when), skipReplenish: true, services }
         );
       } catch (e) {
         if (e.status !== 409) throw e; // sin stock: ese cliente simplemente no compra
@@ -249,7 +262,8 @@ function seedHistory(db, rand) {
   }
 }
 
-export function resetAndSeed(db) {
+// services (opcional): { fiscal, brand } para que las ventas de ejemplo también tengan su factura de demostración.
+export function resetAndSeed(db, services = {}) {
   const rand = rng(20261022);
   const opening = new Date();
   opening.setDate(opening.getDate() - 20);
@@ -261,7 +275,7 @@ export function resetAndSeed(db) {
     seedCatalog(db, ctx);
     seedReviews(db);
   });
-  seedHistory(db, rand);
+  seedHistory(db, rand, services);
 
   // Conteo físico para dejar a propósito casos para mostrar en la demo: dos variantes agotadas y tres con stock bajo.
   const counts = [
@@ -281,7 +295,54 @@ export function resetAndSeed(db) {
 
   setSetting(db, 'auto_reorder', '1');
   tx(db, () => autoReplenish(db, { force: true }));
+  seedExtras(db, ctx);
   bumpCatalog(db);
+}
+
+// Ofertas, cupones, sets de regalo y una tarjeta de regalo de ejemplo (después del historial, para que no lo afecten).
+function seedExtras(db, ctx) {
+  const inDays = (n) => {
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+  tx(db, () => {
+    createPromotion(db, { name: 'Bienvenida: 10% en tu primera compra', code: 'BIENVENIDA10', kind: 'percent', amount: 10, channel: 'online', per_customer: true, featured: true });
+    createPromotion(db, { name: 'Temporada Atelier Sol: 15% de descuento', kind: 'percent', amount: 15, scope: 'marca', scope_value: 'Atelier Sol', ends_at: inDays(45) });
+    createPromotion(db, { name: 'Pequeño Lux: llévate 2 por $50', kind: 'bundle', buy_qty: 2, amount: 50, scope: 'marca', scope_value: 'Pequeño Lux' });
+    createPromotion(db, { name: 'Mostrador: $5 menos en compras de $50 o más', code: 'MOSTRADOR5', kind: 'fixed', amount: 5, min_total: 50, channel: 'mostrador' });
+    db.prepare(
+      `INSERT INTO gift_cards (code, initial_amount, balance, status, source, buyer_name, recipient_name, message, expires_at)
+       VALUES ('GC-DEMO-0050', 50, 50, 'activa', 'manual', 'Tienda', 'Cliente de prueba', 'Tarjeta de ejemplo para probar el pago con tarjeta de regalo', ?)`
+    ).run(inDays(365));
+  });
+  const find = db.prepare("SELECT v.id, p.image FROM variants v JOIN products p ON p.id = v.product_id WHERE p.name = ? AND p.kind = 'Perfume' AND v.size_ml = ?");
+  const sets = [
+    ['Set Dúo Floral', 149, [['Noche de Jazmín', 50], ['Rosa Imperial', 50]], 'Dos florales que se complementan: el jazmín cremoso de Noche de Jazmín y la rosa de terciopelo de Rosa Imperial. Presentación de regalo.'],
+    ['Set Él y Ella', 159, [['Cedro & Cuero', 50], ['Flor de Algodón', 50]], 'Un perfume para cada uno: Cedro & Cuero para él y Flor de Algodón para ella. Ideal para aniversarios.'],
+    ['Set Frescura de Verano', 135, [['Brisa Marina', 30], ['Té Blanco', 50], ['Flor de Algodón', 30]], 'Tres fragancias frescas y ligeras para el calor: sal marina, té blanco y algodón.'],
+  ];
+  for (const [name, price, parts, description] of sets) {
+    const components = parts.map(([n, ml]) => ({ variant_id: find.get(n, ml)?.id, qty: 1 })).filter((c) => c.variant_id);
+    if (components.length !== parts.length) continue;
+    createSet(db, { name, price, components, description, image: find.get(parts[0][0], parts[0][1]).image || '' }, { skuPrefix: ctx.prefix });
+  }
+}
+
+// Una demostración publicada con una versión anterior (sin ofertas, sets, tarjetas ni códigos de barras) recibe lo nuevo al abrirse
+// con esta versión, sin borrar nada de lo que ya tiene. Solo toca una base que sea la de ejemplo (no la de una tienda real).
+export function upgradeDemoData(db, { prefix = 'DLX' } = {}) {
+  if (getSetting(db, 'demo_data_v4', '0') === '1') return false;
+  const isDemo = db.prepare("SELECT 1 FROM products WHERE name = 'Noche de Jazmín' AND brand = ? LIMIT 1").get("D'Luxe Privé");
+  setSetting(db, 'demo_data_v4', '1');
+  if (!isDemo) return false;
+  tx(db, () => {
+    const upd = db.prepare('UPDATE variants SET barcode = ? WHERE id = ?');
+    db.prepare('SELECT id FROM variants WHERE barcode IS NULL AND is_set = 0 ORDER BY id').all().forEach((r, i) => upd.run(ean13(i + 1), r.id));
+    if (!db.prepare('SELECT 1 FROM promotions LIMIT 1').get()) seedExtras(db, { prefix });
+  });
+  bumpCatalog(db);
+  return true;
 }
 
 // ─── Catálogo masivo (prueba de rendimiento) ────────────────────────────────
