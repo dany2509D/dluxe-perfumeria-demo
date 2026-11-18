@@ -500,6 +500,8 @@ function renderAbout() {
   for (const k of ['mission', 'vision', 'values']) $(`#about-${k}`).textContent = a[k];
   const where = $('#about-where');
   if (a.where) { where.innerHTML = `${icon('store', 20)}<span>${esc(a.where)}</span>`; where.hidden = false; }
+  const hours = $('#about-hours');
+  if (BRAND.hours) { hours.textContent = `Horario: ${BRAND.hours}`; hours.hidden = false; }
   const note = $('#about-note');
   if (a.note) { note.textContent = a.note; note.hidden = false; }
   $('#about-chat').addEventListener('click', () => {

@@ -263,9 +263,9 @@ describe('marca configurable', () => {
   });
   test('«Quiénes somos»: texto de brand.json, o uno genérico con el nombre de la tienda', () => {
     const d = loadBrand({});
-    assert.equal(d.founded, 2007);
+    assert.equal(d.founded, 2012);
     assert.equal(d.about.pillars.length, 4);
-    assert.match(d.about.where, /Los Pueblos 2000/);
+    assert.match(d.about.where, /Plaza Aurora/);
     const g = loadBrand({ BRAND_NAME: 'Mi Tienda' }, new URL('file:///no/existe.json'));
     assert.equal(g.founded, 0);
     assert.match(g.about.lead, /^Mi Tienda es una tienda de perfumes/);

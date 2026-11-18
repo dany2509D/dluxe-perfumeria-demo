@@ -11,35 +11,35 @@
   "hours": "Lunes a sábado, de 9:00 a 19:00",
   "phone": "",
   "email": "",
-  "address": "",
+  "address": "Calle de las Orquídeas 128, Local 4, Plaza Aurora, Ciudad de Panamá",
   "instagram": "",
   "facebook": "",
   "demoNote": "Propuesta de demostración. Los productos, marcas y precios de ejemplo son ficticios.",
-  "founded": 2007,
+  "founded": 2012,
   "about": {
-    "lead": "D'Luxe Perfumería es una tienda panameña especializada en perfumes, testers y estuches de regalo para damas, caballeros y niños. Desde 2007 acerca las fragancias a quienes las buscan, en su tienda física y, ahora, también en línea.",
+    "lead": "Maison Aurora nació en 2012 como un pequeño mostrador de fragancias y hoy es una casa de perfumes con alma familiar. Seleccionamos aromas de autor y clásicos de siempre para que cada persona encuentre el suyo, en tienda o desde casa.",
     "pillars": [
       {
         "title": "{years} años",
-        "text": "Dedicados a los perfumes y productos afines en Panamá desde {founded}."
+        "text": "Cuidando la experiencia de elegir un perfume desde {founded}."
       },
       {
-        "title": "Para toda la familia",
-        "text": "Perfumes, estuches de regalo y testers para damas, caballeros y niños."
+        "title": "Aromas de autor",
+        "text": "Una selección curada de fragancias para damas, caballeros y niños."
       },
       {
         "title": "Tienda y en línea",
-        "text": "Visítanos en el C.C. Los Pueblos 2000 o compra desde tu casa."
+        "text": "Visítanos en Plaza Aurora o compra cómodamente desde tu casa."
       },
       {
-        "title": "Atención personalizada",
-        "text": "Te ayudamos a elegir: pregúntale a nuestra asesora antes de comprar."
+        "title": "Asesoría personal",
+        "text": "Nuestra perfumista te guía hasta dar con la fragancia que te represente."
       }
     ],
-    "mission": "Ser la empresa de referencia en la venta y distribución de perfumes en Panamá, llegando a cuantas más personas sea posible.",
-    "vision": "Ser la primera opción para comprar perfumes al detal o al por mayor, con una de las colecciones más amplias, tanto en la tienda como en línea.",
-    "values": "Primero las personas, después la venta: respeto, dedicación, trabajo en equipo y compromiso.",
-    "where": "C.C. Los Pueblos 2000, Local 3A5, Pasillo La Onda, Panamá",
-    "note": "Texto de ejemplo basado en la información pública de D'Luxe Perfumería. El contenido final lo define la empresa."
+    "mission": "Acercar el arte de la perfumería a cada hogar, con un trato cálido y una selección que sorprenda.",
+    "vision": "Ser la casa de perfumes preferida de la región, reconocida por su asesoría y por regalos inolvidables.",
+    "values": "Cercanía, honestidad, buen gusto y pasión por los detalles.",
+    "where": "Calle de las Orquídeas 128, Local 4, Plaza Aurora, Ciudad de Panamá",
+    "note": "Texto inventado de demostración. El contenido final lo define la empresa."
   }
 }

@@ -3,3 +3,6 @@ data/*.db*
 dist/
 .netlify/
 .env
+
+.vercel
+.env*
