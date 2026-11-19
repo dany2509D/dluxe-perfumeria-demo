@@ -4,7 +4,7 @@ import { createProductPage, productHref, ratingLine, sizeOptionsHTML, buyState, 
 import * as acct from './account.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
-const BRAND = window.__BRAND || { name: "D'Luxe Perfumería", short: "D'Luxe", tagline: 'Perfumería', taxName: 'ITBMS', taxRate: 0.07, taxIncluded: true };
+const BRAND = window.__BRAND || { name: "Maison Aurora Perfumería", short: "Maison Aurora", tagline: 'Perfumería', taxName: 'ITBMS', taxRate: 0.07, taxIncluded: true };
 const CART_KEY = 'aurelia-cart-v1';
 const LOW = 3; // "últimas unidades"
 const PAGE = 25; // productos por página

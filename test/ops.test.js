@@ -72,7 +72,7 @@ describe('recibo', () => {
     const sale = await pos(cajero, [{ variant_id: v.id, qty: 2 }], { coupon: 'MOSTRADOR5' });
     assert.equal(sale.status, 201);
     const rc = (await t.call(`/api/admin/orders/${sale.data.id}/receipt`, { token: cajero })).data;
-    assert.equal(rc.store.short, "D'Luxe");
+    assert.equal(rc.store.short, "Maison Aurora");
     assert.equal(rc.order.items[0].qty, 2);
     assert.equal(rc.order.discount, 5);
     assert.equal(rc.order.total, r2(v.price * 2 - 5));

@@ -5,7 +5,7 @@ import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb, HttpError, setSetting } from './db.js';
 import * as svc from './service.js';
-import { resetAndSeed, seedLarge, upgradeDemoData } from './seed.js';
+import { resetAndSeed, seedLarge, upgradeDemoData, renameDemoHouseBrand } from './seed.js';
 import * as catalog from './catalog.js';
 import { loadBrand, publicBrand, renderBrandHtml } from './brand.js';
 import * as reviews from './reviews.js';
@@ -63,6 +63,8 @@ export function createApp({ dbPath, password = 'admin123', seedIfEmpty = true, d
     auth.seedDemoUsers(db, password);
     if (!freshDb) upgradeDemoData(db, { prefix: brand.skuPrefix }); // una demostración anterior recibe las ofertas, sets y tarjetas nuevos
   }
+  // Los perfumes de ejemplo guardados con la marca anterior «D'Luxe Privé» pasan a la nueva (solo existe en datos de ejemplo).
+  if (!freshDb) renameDemoHouseBrand(db);
 
   // WooCommerce (opcional): las credenciales vienen del entorno (WOO_URL, WOO_KEY, WOO_SECRET, WOO_WEBHOOK_SECRET, WOO_PUSH_STOCK).
   const { client: injectedClient, ...wooOverrides } = woo;

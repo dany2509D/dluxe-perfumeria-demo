@@ -3,8 +3,8 @@
 1002,simple,PF-1002,Noche de Jazmín 100ml,1,0,visible,,<p>Jazmín nocturno con <strong>ámbar</strong> suave.</p>,1,9,,98,Perfumes > Damas,Nuevo,,,Marca,Maison Ébène,Familia olfativa,Floral
 1003,simple,PF-1003,Rosa Imperial 100ml,1,0,visible,,Rosa de Damasco y peonía.,1,7,84,105,Perfumes > Damas,,,,Marca,Maison Ébène,Notas,"rosa, peonía, pachulí"
 1004,simple,PF-1004,Rosa Imperial 50ml,1,0,visible,,Rosa de Damasco y peonía.,1,11,,68,Perfumes > Damas,,,,Marca,Maison Ébène,,
-1005,simple,PF-1005,Vainilla Dorada 30 ml,1,0,visible,,"Vainilla, caramelo y sándalo.",1,20,,45,Perfumes > Damas,,,,Marca,D’Luxe Privé,,
-1006,simple,PF-1006,Vainilla Dorada 100 ml,1,0,visible,,"Vainilla, caramelo y sándalo.",1,6,99,125,Perfumes > Damas,,,,Marca,D’Luxe Privé,,
+1005,simple,PF-1005,Vainilla Dorada 30 ml,1,0,visible,,"Vainilla, caramelo y sándalo.",1,20,,45,Perfumes > Damas,,,,Marca,Aurora Privé,,
+1006,simple,PF-1006,Vainilla Dorada 100 ml,1,0,visible,,"Vainilla, caramelo y sándalo.",1,6,99,125,Perfumes > Damas,,,,Marca,Aurora Privé,,
 2001,variable,,Cedro & Cuero,1,0,visible,,<ul><li>Cedro</li><li>Cuero</li><li>Tabaco</li></ul>,1,,,,Perfumes > Caballeros,,,,Marca,Atelier Sol,Tamaño,"50 ml, 100 ml"
 2002,variation,CC-50,Cedro & Cuero - 50 ml,1,0,visible,,,1,12,,72,,,,id:2001,,,Tamaño,50 ml
 2003,variation,CC-100,Cedro & Cuero - 100 ml,1,0,visible,,,1,5,95,118,,,,id:2001,,,Tamaño,100 ml

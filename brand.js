@@ -4,8 +4,8 @@
 import { readFileSync, existsSync } from 'node:fs';
 
 export const DEFAULT_BRAND = {
-  name: "D'Luxe Perfumería",
-  short: "D'Luxe",
+  name: "Maison Aurora Perfumería",
+  short: "Maison Aurora",
   tagline: 'Perfumería',
   skuPrefix: 'DLX',
   country: 'Panamá',

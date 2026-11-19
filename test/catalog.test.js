@@ -256,7 +256,7 @@ describe('migración desde el esquema anterior', () => {
 describe('marca configurable', () => {
   test('valores por defecto y reemplazo por variables de entorno', () => {
     const b = loadBrand({});
-    assert.equal(b.short, "D'Luxe");
+    assert.equal(b.short, "Maison Aurora");
     assert.equal(b.skuPrefix, 'DLX');
     const c = loadBrand({ BRAND_NAME: 'Mi Tienda', BRAND_SHORT: 'Mi', STORE_PHONE: '+507 111', STORE_WHATSAPP: '+507 6000-0000' });
     assert.deepEqual([c.name, c.short, c.phone, c.whatsapp], ['Mi Tienda', 'Mi', '+507 111', '50760000000']);
@@ -278,7 +278,7 @@ describe('marca configurable', () => {
     assert.equal(fillAbout('Sin marcadores', 0, now), 'Sin marcadores');
   });
   test('un brand.json inexistente o dañado no rompe nada', () => {
-    assert.equal(loadBrand({}, new URL('file:///no/existe.json')).name, "D'Luxe Perfumería");
+    assert.equal(loadBrand({}, new URL('file:///no/existe.json')).name, "Maison Aurora Perfumería");
   });
   test('la tienda y el panel se sirven con el nombre de la marca y sin marcadores sin resolver', async () => {
     const app = createApp({ dbPath: ':memory:', chatFactory: () => ({ enabled: false, reason: 'apagado' }) });
@@ -288,12 +288,12 @@ describe('marca configurable', () => {
       for (const path of ['/', '/admin']) {
         const html = await (await fetch(base + path)).text();
         assert.ok(!html.includes('{{'), `${path} tiene marcadores sin reemplazar`);
-        assert.match(html, /D&#39;Luxe/, `${path} muestra el nombre (escapado)`);
+        assert.match(html, /Maison Aurora/, `${path} muestra el nombre`);
         assert.match(html, /window\.__BRAND=\{/, `${path} expone la marca al navegador`);
       }
-      assert.match(await (await fetch(`${base}/admin`)).text(), /data-initial="d"/, 'el logo compacto usa la inicial de la marca');
+      assert.match(await (await fetch(`${base}/admin`)).text(), /data-initial="m"/, 'el logo compacto usa la inicial de la marca');
       const brand = await (await fetch(`${base}/api/brand`)).json();
-      assert.equal(brand.short, "D'Luxe");
+      assert.equal(brand.short, "Maison Aurora");
       assert.ok(!('skuPrefix' in brand) && !('whatsapp' in brand && typeof brand.whatsapp === 'string'), 'no expone datos internos');
     } finally {
       app.server.close();
