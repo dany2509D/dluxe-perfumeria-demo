@@ -1,4 +1,4 @@
-# D'Luxe Perfumería — demo de tienda con inventario automático
+# Maison Aurora Perfumería — demo de tienda con inventario automático
 
 Tienda online + punto de venta + inventario, todo conectado, pensada para un catálogo de **miles de productos**. Cuando se vende
 algo (por la web o en mostrador) el stock baja solo, queda registrado el movimiento y, si llega al mínimo, se genera una orden de
@@ -54,7 +54,7 @@ impuesto (**ITBMS 7 % incluido en el precio**, configurable), horario y redes. E
 La vista **Quiénes somos** (el botón de la barra, o la dirección `/#nosotros`; al entrar a la tienda se ven los perfumes) y lo que contesta el asistente a «¿quiénes son?» o «¿desde cuándo existen?») sale del bloque
 `about` de `brand.json`: `lead` (presentación), `pillars` (hasta 4 datos clave con `title` y `text`), `mission`, `vision`, `values`,
 `where` (dónde está la tienda) y `note`. En los textos valen `{years}` y `{founded}`, que se calculan con `founded` (año de fundación);
-sin ese año, esos datos se omiten. Si falta el bloque, se usa un texto genérico con el nombre de la tienda. El texto de D'Luxe es de
+sin ese año, esos datos se omiten. Si falta el bloque, se usa un texto genérico con el nombre de la tienda. El texto de Maison Aurora es de
 ejemplo, redactado a partir de la información pública de su sitio: la empresa define el definitivo. El teléfono, el correo y la
 dirección de contacto se dejan vacíos a propósito (la demo no debe mandar clientes de prueba al número real); se activan en `brand.json`.
 
@@ -191,10 +191,10 @@ Contrato del `POST` (JSON), con la cabecera `X-Signature: sha256=<HMAC-SHA256 de
   "event": "pedido_estado",
   "channel": "whatsapp",
   "to": "50760001234",
-  "subject": "D'Luxe: Tu pedido #55 está listo para retirar",
-  "text": "D'Luxe: Hola Elena, tu pedido #55 ya está listo para retirar en tienda.\nhttps://…/#seguimiento/NZR7QW9BSF",
+  "subject": "Maison Aurora: Tu pedido #55 está listo para retirar",
+  "text": "Maison Aurora: Hola Elena, tu pedido #55 ya está listo para retirar en tienda.\nhttps://…/#seguimiento/NZR7QW9BSF",
   "data": { "step": "listo", "order_id": 55, "name": "Elena Prueba", "total": 153.9, "tracking_code": "NZR7QW9BSF", "url": "https://…" },
-  "store": "D'Luxe Perfumería",
+  "store": "Maison Aurora Perfumería",
   "created_at": "2026-10-23 17:02:11"
 }
 ```

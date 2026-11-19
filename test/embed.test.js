@@ -29,7 +29,7 @@ describe('página y script del chat embebido', () => {
     const html = await res.text();
     assert.match(html, /<html lang="es" data-embed>/);
     assert.ok(!html.includes('{{'));
-    assert.match(html, /D&#39;Luxe/);
+    assert.match(html, /Maison Aurora/);
   });
   test('solo los orígenes autorizados pueden incrustarlo; el resto de páginas nunca', async () => {
     const embed = (await fetch(`${ctx.base}/embed`)).headers.get('content-security-policy');

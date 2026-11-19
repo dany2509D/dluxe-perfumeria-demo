@@ -4,7 +4,7 @@ import { createProductPage, productHref, ratingLine, sizeOptionsHTML, buyState, 
 import * as acct from './account.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
-const BRAND = window.__BRAND || { name: "D'Luxe Perfumería", short: "D'Luxe", tagline: 'Perfumería', taxName: 'ITBMS', taxRate: 0.07, taxIncluded: true };
+const BRAND = window.__BRAND || { name: "Maison Aurora Perfumería", short: "Maison Aurora", tagline: 'Perfumería', taxName: 'ITBMS', taxRate: 0.07, taxIncluded: true };
 const CART_KEY = 'aurelia-cart-v1';
 const LOW = 3; // "últimas unidades"
 const PAGE = 25; // productos por página
@@ -500,6 +500,8 @@ function renderAbout() {
   for (const k of ['mission', 'vision', 'values']) $(`#about-${k}`).textContent = a[k];
   const where = $('#about-where');
   if (a.where) { where.innerHTML = `${icon('store', 20)}<span>${esc(a.where)}</span>`; where.hidden = false; }
+  const hours = $('#about-hours');
+  if (BRAND.hours) { hours.textContent = `Horario: ${BRAND.hours}`; hours.hidden = false; }
   const note = $('#about-note');
   if (a.note) { note.textContent = a.note; note.hidden = false; }
   $('#about-chat').addEventListener('click', () => {

@@ -21,20 +21,24 @@ const SUPPLIERS = [
 // Fotos libres de derechos en public/img (ver public/img/CREDITS.md).
 const photo = (file) => (file ? `/img/${file}.jpg` : null);
 
+// Marca propia de los perfumes de ejemplo. Antes se llamaba «D'Luxe Privé»; se cambió porque D'luxe Perfumería es una tienda real en Panamá.
+export const DEMO_HOUSE_BRAND = 'Aurora Privé';
+const OLD_DEMO_HOUSE_BRAND = "D'Luxe Privé";
+
 // nombre, marca, categoría, familia, notas, color del líquido, precio base 50 ml, proveedor (1-3), foto, descripción
 const PERFUMES = [
-  ['Noche de Jazmín', "D'Luxe Privé", 'Damas', 'Floral', 'Jazmín, vainilla, almizcle', '#e7b8d0', 82, 1, 'p11', 'Un jazmín blanco que se abre despacio sobre un fondo cremoso de vainilla. Pensado para las noches largas.'],
-  ['Rosa Imperial', "D'Luxe Privé", 'Damas', 'Floral', 'Rosa de Damasco, peonía, pachulí', '#f0a6b4', 96, 1, 'p05', 'Rosa vestida de terciopelo, con un pachulí suave que le da profundidad y carácter.'],
+  ['Noche de Jazmín', DEMO_HOUSE_BRAND, 'Damas', 'Floral', 'Jazmín, vainilla, almizcle', '#e7b8d0', 82, 1, 'p11', 'Un jazmín blanco que se abre despacio sobre un fondo cremoso de vainilla. Pensado para las noches largas.'],
+  ['Rosa Imperial', DEMO_HOUSE_BRAND, 'Damas', 'Floral', 'Rosa de Damasco, peonía, pachulí', '#f0a6b4', 96, 1, 'p05', 'Rosa vestida de terciopelo, con un pachulí suave que le da profundidad y carácter.'],
   ['Ámbar Nocturno', 'Maison Ébène', 'Unisex', 'Oriental', 'Ámbar, oud, canela', '#d98c3f', 128, 2, 'p02', 'Resinas cálidas y especias sobre madera oscura. Una firma intensa que perdura todo el día.'],
   ['Cedro & Cuero', 'Maison Ébène', 'Caballeros', 'Amaderado', 'Cedro, cuero, tabaco', '#9a6b43', 110, 2, 'p12', 'Cedro seco, cuero curtido y un toque de tabaco dulce. Elegante y seguro de sí mismo.'],
   ['Brisa Marina', 'Atelier Sol', 'Unisex', 'Fresco', 'Sal marina, bergamota, salvia', '#8fc7d6', 74, 3, 'p01', 'La frescura de una costa al amanecer: sal, cítricos y hierbas verdes.'],
   ['Vetiver Real', 'Maison Ébène', 'Caballeros', 'Amaderado', 'Vetiver, pimienta rosa, haba tonka', '#6f8f5e', 104, 2, 'p13', 'Un vetiver terroso y limpio, con una chispa de pimienta y un fondo suave de haba tonka.'],
   ['Citrus Solar', 'Atelier Sol', 'Unisex', 'Cítrico', 'Naranja, limón, neroli', '#f2c14e', 68, 3, 'p08', 'Luz de mediodía en un frasco. Cítricos jugosos y flor de azahar para todos los días.'],
-  ['Flor de Algodón', "D'Luxe Privé", 'Damas', 'Fresco', 'Algodón, lirio, almizcle blanco', '#dfe6ee', 78, 1, 'p04', 'Ropa recién tendida al sol. Limpio, ligero y luminoso.'],
+  ['Flor de Algodón', DEMO_HOUSE_BRAND, 'Damas', 'Fresco', 'Algodón, lirio, almizcle blanco', '#dfe6ee', 78, 1, 'p04', 'Ropa recién tendida al sol. Limpio, ligero y luminoso.'],
   ['Oud Majestad', 'Al Najma', 'Unisex', 'Oriental', 'Oud, rosa, azafrán', '#7b3f4f', 165, 2, 'p14', 'Oud profundo con azafrán y rosa. La pieza más suntuosa de la colección.'],
   ['Medianoche Negro', 'Maison Ébène', 'Caballeros', 'Oriental', 'Pimienta negra, haba tonka, incienso', '#3a3a52', 118, 2, 'p09', 'Especiado, magnético y nocturno. Pimienta negra e incienso sobre un fondo cremoso.'],
   ['Té Blanco', 'Atelier Sol', 'Unisex', 'Fresco', 'Té blanco, pera, cedro', '#d9e6c8', 70, 3, 'p06', 'Té blanco tibio, sereno y minimalista. Para quienes prefieren lo discreto.'],
-  ['Vainilla Dorada', "D'Luxe Privé", 'Damas', 'Gourmand', 'Vainilla, caramelo, sándalo', '#e3b778', 88, 1, 'p10', 'Vainilla ámbar y caramelo tostado sobre sándalo cremoso. Un abrazo en forma de perfume.'],
+  ['Vainilla Dorada', DEMO_HOUSE_BRAND, 'Damas', 'Gourmand', 'Vainilla, caramelo, sándalo', '#e3b778', 88, 1, 'p10', 'Vainilla ámbar y caramelo tostado sobre sándalo cremoso. Un abrazo en forma de perfume.'],
   ['Cereza Noir', 'Maison Ébène', 'Damas', 'Frutal', 'Cereza negra, almendra, rosa', '#8c1d3c', 99, 2, 'p03', 'Cereza oscura, almendra amarga y un corazón de rosa. Seductor y atrevido.'],
   // Inspiración árabe (sin foto: se ve el frasco ilustrado)
   ['Najm al-Layl', 'Al Najma', 'Unisex', 'Oriental', 'Oud, ámbar, azafrán, rosa', '#6b3a2a', 138, 2, null, 'La estrella de la noche: oud ahumado, azafrán y una rosa oscura. Intensidad de Oriente.'],
@@ -329,11 +333,23 @@ function seedExtras(db, ctx) {
   }
 }
 
+// Una demostración publicada con el nombre anterior guarda «D'Luxe Privé» en su base: al abrirse, sus productos pasan a la marca nueva.
+export function renameDemoHouseBrand(db) {
+  const rows = db.prepare('SELECT id, name, brand, category, subcategory, kind, family, notes FROM products WHERE brand = ?').all(OLD_DEMO_HOUSE_BRAND);
+  if (!rows.length) return false;
+  tx(db, () => {
+    const upd = db.prepare('UPDATE products SET brand = ?, search_text = ? WHERE id = ?');
+    for (const p of rows) upd.run(DEMO_HOUSE_BRAND, searchText({ ...p, brand: DEMO_HOUSE_BRAND }), p.id);
+  });
+  bumpCatalog(db);
+  return true;
+}
+
 // Una demostración publicada con una versión anterior (sin ofertas, sets, tarjetas ni códigos de barras) recibe lo nuevo al abrirse
 // con esta versión, sin borrar nada de lo que ya tiene. Solo toca una base que sea la de ejemplo (no la de una tienda real).
 export function upgradeDemoData(db, { prefix = 'DLX' } = {}) {
   if (getSetting(db, 'demo_data_v4', '0') === '1') return false;
-  const isDemo = db.prepare("SELECT 1 FROM products WHERE name = 'Noche de Jazmín' AND brand = ? LIMIT 1").get("D'Luxe Privé");
+  const isDemo = db.prepare("SELECT 1 FROM products WHERE name = 'Noche de Jazmín' AND brand IN (?, ?) LIMIT 1").get(DEMO_HOUSE_BRAND, OLD_DEMO_HOUSE_BRAND);
   setSetting(db, 'demo_data_v4', '1');
   if (!isDemo) return false;
   tx(db, () => {

@@ -200,7 +200,7 @@ describe('estado compartido entre instancias de la función', () => {
     const inst = demoState(store, { ADMIN_PASSWORD: 'otra-clave', CHATBOT: 'local' });
     try {
       const res = await call(inst, '/api/brand');
-      assert.equal((await json(res)).short, "D'Luxe");
+      assert.equal((await json(res)).short, "Maison Aurora");
       assert.equal((await call(inst, '/api/login', { method: 'POST', body: { password: 'admin123' } })).status, 401);
       assert.equal((await call(inst, '/api/login', { method: 'POST', body: { password: 'otra-clave' } })).status, 200);
       const sinFoto = (await json(await call(inst, '/api/products?limit=25'))).products.filter((p) => !p.image);
@@ -315,7 +315,7 @@ describe('sitio estático para Netlify (scripts/build-netlify.mjs)', () => {
     for (const f of ['index.html', 'admin.html', 'embed.html']) {
       const html = read(out, f);
       assert.ok(!html.includes('{{') && !html.includes('<!--BRAND-->'), `${f} sin marcadores`);
-      assert.match(html, /D&#39;Luxe/);
+      assert.match(html, /Maison Aurora/);
       assert.match(html, /window\.__BRAND=/);
     }
     for (const f of ['css/store.css', 'js/store.js', 'embed.js', 'img/p25.jpg', 'img/hero.jpg', 'samples/woocommerce-export-demo.csv', '_headers']) assert.ok(existsSync(join(out, f)), f);

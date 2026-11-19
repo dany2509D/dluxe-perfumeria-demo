@@ -38,11 +38,11 @@ describe('conversación básica', () => {
     }
   });
   test('dice dónde está la tienda y quiénes son, con lo que trae brand.json', () => {
-    assert.match(respond(db, { text: 'dónde queda la tienda' }).text, /Los Pueblos 2000/);
+    assert.match(respond(db, { text: 'dónde queda la tienda' }).text, /Plaza Aurora/);
     const who = respond(db, { text: '¿Quiénes son ustedes?' }).text;
-    assert.match(who, /D'Luxe Perfumería es una tienda/);
+    assert.match(who, /Maison Aurora nació/);
     assert.match(who, /Llevamos \d+ años/);
-    assert.match(respond(db, { text: '¿desde cuándo existen?' }).text, /2007/);
+    assert.match(respond(db, { text: '¿desde cuándo existen?' }).text, /2012/);
   });
   test('lo que no entiende o está fuera de tema no inventa recomendaciones', () => {
     for (const q of ['cuál es la capital de Francia', 'qué opinas del fútbol', 'asdfgh']) {

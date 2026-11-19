@@ -14,7 +14,7 @@ import './admin-reportes.js';
 import './admin-avisos.js';
 import './admin-usuarios.js';
 
-const BRAND = window.__BRAND || { name: "D'Luxe Perfumería", short: "D'Luxe" };
+const BRAND = window.__BRAND || { name: "Maison Aurora Perfumería", short: "Maison Aurora" };
 const CATEGORIES = ['Damas', 'Caballeros', 'Infantil', 'Unisex'];
 const KINDS = ['Perfume', 'Estuche', 'Tester'];
 const PAGE = 50;
