@@ -18,6 +18,9 @@
 .nav-link:hover { border-color: var(--line-strong); }
 .nav-link.is-active { border-color: var(--white); }
 .wordmark { font-size: 46px; font-weight: 500; letter-spacing: 0.04em; line-height: 1; text-transform: uppercase; text-decoration: none; color: var(--fg); }
+/* Un nombre de dos palabras («Maison Aurora») se apila en dos líneas dentro de la barra de 80 px, en vez de partirse
+   al azar y montarse sobre la franja de ofertas. El diseño Shop lleva su propio logotipo de una línea. */
+:root:not([data-theme='shop']) .topbar-inner .wordmark { width: min-content; max-width: 100%; text-align: center; font-size: 34px; line-height: 0.94; }
 .bag-count {
   min-width: 22px; height: 22px; padding: 0 6px; display: inline-grid; place-items: center;
   background: var(--lemon); color: var(--olive); border-radius: var(--radius); font-size: 13px; font-weight: 700;
@@ -176,6 +179,7 @@
   .topbar-inner { grid-template-columns: auto 1fr; height: 68px; }
   .nav-left, .nav-admin { display: none; }
   .wordmark { font-size: 34px; }
+  :root:not([data-theme='shop']) .topbar-inner .wordmark { text-align: left; font-size: 28px; }
   .hero-inner { grid-template-columns: 1fr; min-height: 0; }
   .hero-text { padding-block: 56px 48px; }
   .hero-art { min-height: 320px; padding-top: 8%; }
